@@ -30,9 +30,9 @@ func renderAdmin(t *testing.T, component templ.Component) string {
 	return output.String()
 }
 
-func TestAdminDashboardListsUsersThatOpenTheirPage(t *testing.T) {
+func TestAdminOverviewListsUsersThatOpenTheirPage(t *testing.T) {
 	now := time.Now()
-	html := renderAdmin(t, AdminDashboard(&model.AdminDashboard{
+	html := renderAdmin(t, AdminOverview(&model.AdminOverview{
 		Metrics: model.AdminMetrics{Users: 2, VerifiedUsers: 1, Workspaces: 2, PaidWorkspaces: 1, ActiveSessions: 3},
 		Users: model.AdminUserPage{
 			Users: []model.AdminUser{
@@ -46,7 +46,7 @@ func TestAdminDashboardListsUsersThatOpenTheirPage(t *testing.T) {
 	}))
 	for _, want := range []string{"noindex, nofollow", ">Admin</h1>", "target@example.com", `href="/admin/users/target"`, `href="/admin/activity"`, `href="/admin/old-address"`, "Operator", "2 users"} {
 		if !strings.Contains(html, want) {
-			t.Errorf("admin dashboard missing %q", want)
+			t.Errorf("admin overview missing %q", want)
 		}
 	}
 	if strings.Contains(html, "/impersonate") || strings.Contains(html, "/sessions/revoke") {

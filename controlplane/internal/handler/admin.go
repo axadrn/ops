@@ -21,9 +21,9 @@ func NewAdminHandler(admin *service.AdminService) *AdminHandler {
 	return &AdminHandler{admin: admin}
 }
 
-func (h *AdminHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
+func (h *AdminHandler) Overview(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	dashboard, err := h.admin.Dashboard(
+	overview, err := h.admin.Overview(
 		ctxkeys.User(r.Context()),
 		ctxkeys.Session(r.Context()),
 		r.URL.Query().Get("q"),
@@ -33,7 +33,7 @@ func (h *AdminHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, r, err)
 		return
 	}
-	render(w, r, pages.AdminDashboard(dashboard))
+	render(w, r, pages.AdminOverview(overview))
 }
 
 // OldAddress shows what still arrives on the old addresses.
@@ -58,12 +58,12 @@ func (h *AdminHandler) User(w http.ResponseWriter, r *http.Request) {
 
 // Activity is what operators did, the last 50 events.
 func (h *AdminHandler) Activity(w http.ResponseWriter, r *http.Request) {
-	dashboard, err := h.admin.Dashboard(ctxkeys.User(r.Context()), ctxkeys.Session(r.Context()), "", 1)
+	overview, err := h.admin.Overview(ctxkeys.User(r.Context()), ctxkeys.Session(r.Context()), "", 1)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
 	}
-	render(w, r, pages.AdminActivity(dashboard.Events))
+	render(w, r, pages.AdminActivity(overview.Events))
 }
 
 func (h *AdminHandler) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {

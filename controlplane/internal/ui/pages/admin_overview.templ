@@ -11,10 +11,10 @@ import (
 	"github.com/axadrn/moin/controlplane/internal/ui/layouts"
 )
 
-// AdminDashboard is Admin, for whoever runs moin: the numbers at a glance,
+// AdminOverview is Admin, for whoever runs moin: the numbers at a glance,
 // the way to the operator activity and the old address, and the users, each
 // a row that opens its own page with what an operator can do to it.
-templ AdminDashboard(data *model.AdminDashboard) {
+templ AdminOverview(data *model.AdminOverview) {
 	@layouts.Admin("Admin") {
 		@panelPage() {
 			@kit.Header(kit.Back{}, "Admin")

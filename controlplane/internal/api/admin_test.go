@@ -47,14 +47,14 @@ func TestAdminUsers(t *testing.T) {
 
 	recorder := environment.send(t, apiRequest{method: http.MethodGet, path: "/api/v1/admin/users", bearer: operatorToken})
 	expectStatus(t, recorder, http.StatusOK)
-	dashboard := decodeBody[api.AdminDashboard](t, recorder)
-	if dashboard.Metrics.Users != 3 || dashboard.Users.TotalUsers != 3 || len(dashboard.Users.Items) != 3 || dashboard.Users.Page != 1 {
-		t.Fatalf("dashboard = %s", recorder.Body.String())
+	overview := decodeBody[api.AdminOverview](t, recorder)
+	if overview.Metrics.Users != 3 || overview.Users.TotalUsers != 3 || len(overview.Users.Items) != 3 || overview.Users.Page != 1 {
+		t.Fatalf("overview = %s", recorder.Body.String())
 	}
 
 	filtered := environment.send(t, apiRequest{method: http.MethodGet, path: "/api/v1/admin/users?query=ada&page=1", bearer: operatorToken})
 	expectStatus(t, filtered, http.StatusOK)
-	page := decodeBody[api.AdminDashboard](t, filtered).Users
+	page := decodeBody[api.AdminOverview](t, filtered).Users
 	if page.Query != "ada" || len(page.Items) != 1 || page.Items[0].ID != target.ID || page.Items[0].IsAdmin {
 		t.Fatalf("filtered users = %#v", page)
 	}
@@ -85,9 +85,9 @@ func TestAdminRevokeUserSessions(t *testing.T) {
 	missing := environment.send(t, apiRequest{method: http.MethodPost, path: "/api/v1/admin/users/missing/sessions/revoke", bearer: operatorToken})
 	expectError(t, missing, http.StatusNotFound, "not_found")
 
-	dashboard := decodeBody[api.AdminDashboard](t, environment.send(t, apiRequest{method: http.MethodGet, path: "/api/v1/admin/users", bearer: operatorToken}))
-	if len(dashboard.Events) == 0 || dashboard.Events[0].Action != "admin.sessions_revoked" || dashboard.Events[0].TargetID != target.ID {
-		t.Fatalf("events = %#v", dashboard.Events)
+	overview := decodeBody[api.AdminOverview](t, environment.send(t, apiRequest{method: http.MethodGet, path: "/api/v1/admin/users", bearer: operatorToken}))
+	if len(overview.Events) == 0 || overview.Events[0].Action != "admin.sessions_revoked" || overview.Events[0].TargetID != target.ID {
+		t.Fatalf("events = %#v", overview.Events)
 	}
 }
 

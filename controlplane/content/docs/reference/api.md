@@ -189,6 +189,6 @@ For the admins of the hosted control plane, behind `/admin`.
 
 | Endpoint | Token | What it does |
 | --- | --- | --- |
-| `GET /api/v1/admin/users` | session | the admin dashboard: metrics, a page of users (`query` filters by email or name), the latest activity |
+| `GET /api/v1/admin/users` | session | the admin overview: metrics, a page of users (`query` filters by email or name), the latest activity |
 | `POST /api/v1/admin/users/{id}/sessions/revoke` | session | signs a user out everywhere |
 | `GET /api/v1/admin/old-address` | session | what still arrives on the old addresses (`OLD_URLS`) over the last 14 days, by day, host and kind; `quiet` after 14 quiet days |

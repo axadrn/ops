@@ -55,18 +55,18 @@ func TestAdminServiceAccessMetricsAndImpersonation(t *testing.T) {
 	if admin.IsAdmin(target.User, operatorSession) {
 		t.Fatal("ordinary user was recognized as an operator")
 	}
-	dashboard, err := admin.Dashboard(operator.User, operatorSession, "target@", 1)
+	overview, err := admin.Overview(operator.User, operatorSession, "target@", 1)
 	if err != nil {
-		t.Fatalf("Dashboard() error = %v", err)
+		t.Fatalf("Overview() error = %v", err)
 	}
-	if dashboard.Metrics.Users != 2 || dashboard.Metrics.VerifiedUsers != 1 || dashboard.Metrics.Workspaces != 2 || dashboard.Metrics.PaidWorkspaces != 1 || dashboard.Metrics.ActiveSessions != 2 {
-		t.Fatalf("metrics = %#v", dashboard.Metrics)
+	if overview.Metrics.Users != 2 || overview.Metrics.VerifiedUsers != 1 || overview.Metrics.Workspaces != 2 || overview.Metrics.PaidWorkspaces != 1 || overview.Metrics.ActiveSessions != 2 {
+		t.Fatalf("metrics = %#v", overview.Metrics)
 	}
-	if len(dashboard.Users.Users) != 1 || dashboard.Users.Users[0].ID != target.User.ID {
-		t.Fatalf("searched users = %#v", dashboard.Users)
+	if len(overview.Users.Users) != 1 || overview.Users.Users[0].ID != target.User.ID {
+		t.Fatalf("searched users = %#v", overview.Users)
 	}
-	if _, err := admin.Dashboard(target.User, operatorSession, "", 1); !errors.Is(err, ErrAdminPermission) {
-		t.Fatalf("ordinary Dashboard() error = %v, want ErrAdminPermission", err)
+	if _, err := admin.Overview(target.User, operatorSession, "", 1); !errors.Is(err, ErrAdminPermission) {
+		t.Fatalf("ordinary Overview() error = %v, want ErrAdminPermission", err)
 	}
 
 	impersonationRequest := httptest.NewRequest(http.MethodPost, "/admin/users/target/impersonate", nil)
@@ -259,7 +259,7 @@ func hasAdminActivityAction(events []model.AdminActivityEvent, action string) bo
 	return false
 }
 
-func TestDashboardShowsTheNetworkOnlyWhereItIsSet(t *testing.T) {
+func TestAdminOverviewShowsTheNetworkOnlyWhereItIsSet(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	operator := testutil.SeedUser(t, database, testutil.UserOptions{ID: "network-operator", Email: "network@example.com", Verified: true})
 	auth := NewAuthService(nil, nil, repository.NewSessions(database), nil, nil, false, 7*24*time.Hour, time.Hour, time.Hour, time.Hour, time.Hour)
@@ -269,20 +269,20 @@ func TestDashboardShowsTheNetworkOnlyWhereItIsSet(t *testing.T) {
 		t.Fatalf("StartSession() error = %v", err)
 	}
 
-	selfHosted, err := admin.Dashboard(operator.User, session, "", 1)
+	selfHosted, err := admin.Overview(operator.User, session, "", 1)
 	if err != nil {
-		t.Fatalf("Dashboard() error = %v", err)
+		t.Fatalf("Overview() error = %v", err)
 	}
 	if selfHosted.Network != nil {
-		t.Fatalf("a self-hosted dashboard shows a network: %+v", selfHosted.Network)
+		t.Fatalf("a self-hosted overview shows a network: %+v", selfHosted.Network)
 	}
 
 	admin.UseNetwork(func() model.Network {
 		return model.Network{SelfHosted: 3, HostedWorkspaces: 7, Counts: model.Counts{Servers: 12, Apps: 40, Deploys: 1234}}
 	})
-	hosted, err := admin.Dashboard(operator.User, session, "", 1)
+	hosted, err := admin.Overview(operator.User, session, "", 1)
 	if err != nil {
-		t.Fatalf("Dashboard() error = %v", err)
+		t.Fatalf("Overview() error = %v", err)
 	}
 	if hosted.Network == nil || hosted.Network.Deploys != 1234 || hosted.Network.SelfHosted != 3 {
 		t.Fatalf("hosted network = %+v, want the counts", hosted.Network)

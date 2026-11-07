@@ -348,7 +348,7 @@ func adminRoutes(mux *http.ServeMux, app *app.App) {
 	adminRoute := func(next http.HandlerFunc) http.HandlerFunc {
 		return middleware.RequireAuth(middleware.RequireAdmin(next))
 	}
-	mux.HandleFunc("GET /admin", adminRoute(admin.Dashboard))
+	mux.HandleFunc("GET /admin", adminRoute(admin.Overview))
 	mux.HandleFunc("GET /admin/old-address", adminRoute(admin.OldAddress))
 	mux.HandleFunc("GET /admin/activity", adminRoute(admin.Activity))
 	mux.HandleFunc("GET /admin/users/{userID}", adminRoute(admin.User))

@@ -68,7 +68,7 @@ func (s *AdminService) IsAdmin(user *model.User, session *model.Session) bool {
 	return ok
 }
 
-// UseOldAddress has the dashboard show the traffic on the old addresses.
+// UseOldAddress has the overview show the traffic on the old addresses.
 func (s *AdminService) UseOldAddress(oldAddress *OldAddressService) {
 	s.oldAddress = oldAddress
 }
@@ -82,7 +82,7 @@ func (s *AdminService) OldAddress(user *model.User, session *model.Session) (*mo
 	return s.oldAddress.Report()
 }
 
-func (s *AdminService) Dashboard(user *model.User, session *model.Session, query string, page int) (*model.AdminDashboard, error) {
+func (s *AdminService) Overview(user *model.User, session *model.Session, query string, page int) (*model.AdminOverview, error) {
 	if !s.IsAdmin(user, session) {
 		return nil, ErrAdminPermission
 	}
@@ -115,7 +115,7 @@ func (s *AdminService) Dashboard(user *model.User, session *model.Session, query
 	if err != nil {
 		return nil, err
 	}
-	return &model.AdminDashboard{
+	return &model.AdminOverview{
 		Metrics: metrics,
 		Users: model.AdminUserPage{
 			Users:      users,
@@ -297,7 +297,7 @@ func (s *AdminService) adminActionEvent(actorUserID, action, targetType, targetI
 	}
 }
 
-// UseNetwork shows on the dashboard what moin runs everywhere: the hosted
+// UseNetwork shows on the overview what moin runs everywhere: the hosted
 // control plane sets it, a self-hosted one has no network to show.
 func (s *AdminService) UseNetwork(network func() model.Network) {
 	s.network = network

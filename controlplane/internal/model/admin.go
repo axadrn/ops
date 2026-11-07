@@ -44,7 +44,7 @@ type AdminUserPage struct {
 	TotalUsers int
 }
 
-type AdminDashboard struct {
+type AdminOverview struct {
 	Metrics AdminMetrics
 	Users   AdminUserPage
 	Events  []AdminActivityEvent

@@ -45,12 +45,12 @@ func TestAdminMakesAUserFreeForeverAndBack(t *testing.T) {
 
 	plans := func() map[string]model.AdminUser {
 		t.Helper()
-		dashboard, err := admin.Dashboard(operator.User, session, "", 1)
+		overview, err := admin.Overview(operator.User, session, "", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		byEmail := map[string]model.AdminUser{}
-		for _, user := range dashboard.Users.Users {
+		for _, user := range overview.Users.Users {
 			byEmail[user.Email] = user
 		}
 		return byEmail

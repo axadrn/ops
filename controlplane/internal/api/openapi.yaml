@@ -79,7 +79,7 @@ tags:
   - name: Servers
     description: Servers with a moin agent. The web UI, the CLI and the TUI use the same endpoints. A server is online while its agent holds a session.
   - name: Admin
-    description: Operator dashboard data and session revocation. Admins only.
+    description: Operator overview data and session revocation. Admins only.
   - name: OAuth
     description: Browser redirect flows. They end in a cookie session and are not JSON endpoints.
 
@@ -4242,8 +4242,8 @@ paths:
   /api/v1/admin/users:
     get:
       tags: [Admin]
-      operationId: getAdminDashboard
-      summary: Get the admin dashboard
+      operationId: getAdminOverview
+      summary: Get the admin overview
       description: Metrics, one page of users, and the latest activity events.
       parameters:
         - name: query
@@ -4260,11 +4260,11 @@ paths:
             default: 1
       responses:
         '200':
-          description: The dashboard.
+          description: The overview.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminDashboard'
+                $ref: '#/components/schemas/AdminOverview'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -4485,7 +4485,7 @@ components:
       name: userID
       in: path
       required: true
-      description: The user ID from the admin dashboard.
+      description: The user ID from the admin overview.
       schema:
         type: string
     OAuthCode:
@@ -6915,7 +6915,7 @@ components:
           description: Nothing arrived for quiet_days days, so the old address can go.
         quiet_days:
           type: integer
-    AdminDashboard:
+    AdminOverview:
       type: object
       required: [metrics, users, events]
       properties:

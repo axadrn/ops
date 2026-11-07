@@ -10,7 +10,7 @@ import (
 	"github.com/axadrn/moin/controlplane/internal/service"
 )
 
-// AdminHandler serves the admin dashboard data and session revocation.
+// AdminHandler serves the admin overview data and session revocation.
 // Impersonation stays in the HTML admin.
 type AdminHandler struct {
 	admin *service.AdminService
@@ -20,7 +20,7 @@ func NewAdminHandler(admin *service.AdminService) *AdminHandler {
 	return &AdminHandler{admin: admin}
 }
 
-// AdminMetrics are the counters of the admin dashboard.
+// AdminMetrics are the counters of the admin overview.
 type AdminMetrics struct {
 	Users          int `json:"users"`
 	VerifiedUsers  int `json:"verified_users"`
@@ -63,8 +63,8 @@ type AdminActivityEvent struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// AdminDashboard is the JSON shape of model.AdminDashboard.
-type AdminDashboard struct {
+// AdminOverview is the JSON shape of model.AdminOverview.
+type AdminOverview struct {
 	Metrics AdminMetrics         `json:"metrics"`
 	Users   AdminUserPage        `json:"users"`
 	Events  []AdminActivityEvent `json:"events"`
@@ -81,10 +81,10 @@ type AdminNetwork struct {
 	SelfHosted       int `json:"self_hosted"`
 }
 
-// NewAdminDashboard converts the admin dashboard into its JSON shape.
-func NewAdminDashboard(dashboard *model.AdminDashboard) AdminDashboard {
-	users := make([]AdminUser, 0, len(dashboard.Users.Users))
-	for _, user := range dashboard.Users.Users {
+// NewAdminOverview converts the admin overview into its JSON shape.
+func NewAdminOverview(overview *model.AdminOverview) AdminOverview {
+	users := make([]AdminUser, 0, len(overview.Users.Users))
+	for _, user := range overview.Users.Users {
 		users = append(users, AdminUser{
 			ID:                 user.ID,
 			Email:              user.Email,
@@ -96,8 +96,8 @@ func NewAdminDashboard(dashboard *model.AdminDashboard) AdminDashboard {
 			IsAdmin:            user.IsAdmin,
 		})
 	}
-	events := make([]AdminActivityEvent, 0, len(dashboard.Events))
-	for _, event := range dashboard.Events {
+	events := make([]AdminActivityEvent, 0, len(overview.Events))
+	for _, event := range overview.Events {
 		events = append(events, AdminActivityEvent{
 			ID:          event.ID,
 			ActorUserID: event.ActorUserID,
@@ -111,34 +111,34 @@ func NewAdminDashboard(dashboard *model.AdminDashboard) AdminDashboard {
 		})
 	}
 	var network *AdminNetwork
-	if n := dashboard.Network; n != nil {
+	if n := overview.Network; n != nil {
 		network = &AdminNetwork{Deploys: n.Deploys, Apps: n.Apps, Servers: n.Servers, HostedWorkspaces: n.HostedWorkspaces, SelfHosted: n.SelfHosted}
 	}
-	return AdminDashboard{
+	return AdminOverview{
 		Network: network,
 		Metrics: AdminMetrics{
-			Users:          dashboard.Metrics.Users,
-			VerifiedUsers:  dashboard.Metrics.VerifiedUsers,
-			Workspaces:     dashboard.Metrics.Workspaces,
-			PaidWorkspaces: dashboard.Metrics.PaidWorkspaces,
-			ActiveSessions: dashboard.Metrics.ActiveSessions,
+			Users:          overview.Metrics.Users,
+			VerifiedUsers:  overview.Metrics.VerifiedUsers,
+			Workspaces:     overview.Metrics.Workspaces,
+			PaidWorkspaces: overview.Metrics.PaidWorkspaces,
+			ActiveSessions: overview.Metrics.ActiveSessions,
 		},
 		Users: AdminUserPage{
 			Items:      users,
-			Query:      dashboard.Users.Query,
-			Page:       dashboard.Users.Page,
-			TotalPages: dashboard.Users.TotalPages,
-			TotalUsers: dashboard.Users.TotalUsers,
+			Query:      overview.Users.Query,
+			Page:       overview.Users.Page,
+			TotalPages: overview.Users.TotalPages,
+			TotalUsers: overview.Users.TotalUsers,
 		},
 		Events: events,
 	}
 }
 
-// Users returns the admin dashboard: metrics, one page of users filtered by
+// Users returns the admin overview: metrics, one page of users filtered by
 // the query parameter, and the latest activity events.
 func (h *AdminHandler) Users(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	dashboard, err := h.admin.Dashboard(
+	overview, err := h.admin.Overview(
 		ctxkeys.User(r.Context()),
 		ctxkeys.Session(r.Context()),
 		r.URL.Query().Get("query"),
@@ -148,7 +148,7 @@ func (h *AdminHandler) Users(w http.ResponseWriter, r *http.Request) {
 		ServiceError(w, err)
 		return
 	}
-	JSON(w, http.StatusOK, NewAdminDashboard(dashboard))
+	JSON(w, http.StatusOK, NewAdminOverview(overview))
 }
 
 // OldAddress returns what still arrives on the old addresses of the

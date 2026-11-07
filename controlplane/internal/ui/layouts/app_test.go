@@ -72,7 +72,7 @@ func appContext(role string, workspaceCount int) context.Context {
 func renderApp(t *testing.T, ctx context.Context) string {
 	t.Helper()
 	var output bytes.Buffer
-	if err := App("Dashboard").Render(ctx, &output); err != nil {
+	if err := App("Overview").Render(ctx, &output); err != nil {
 		t.Fatalf("render App(): %v", err)
 	}
 	return output.String()
