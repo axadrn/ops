@@ -49,7 +49,7 @@ func newEnvironment(t *testing.T) *environment {
 		repository.NewWorkspaces(database),
 		repository.NewWorkspaceMembers(database),
 		repository.NewWorkspaceInvitations(database),
-		repository.NewWorkspaceAudit(database),
+		repository.NewActivity(database),
 		users,
 		subscriptions,
 		email,
@@ -59,7 +59,7 @@ func newEnvironment(t *testing.T) *environment {
 	env.services.Workspaces = workspaces
 	env.services.Subscriptions = subscriptions
 	env.services.Invitations = middleware.NewWorkspaceInvitationLimiter()
-	env.services.Servers = service.NewServerService(repository.NewServers(database), repository.NewWorkspaceAudit(database), "https://app.example.com")
+	env.services.Servers = service.NewServerService(repository.NewServers(database), repository.NewActivity(database), "https://app.example.com")
 	env.services.Servers.RequirePlanFor(subscriptions.Access)
 	box, err := secret.New(bytes.Repeat([]byte{1}, 32))
 	if err != nil {
@@ -71,8 +71,8 @@ func newEnvironment(t *testing.T) *environment {
 	}))
 	t.Cleanup(releases.Close)
 	env.updates = t.TempDir()
-	env.services.Updates = service.NewUpdateService("v0.2.0", releases.URL, env.updates, true, true, []string{"ada@example.com"}, repository.NewWorkspaceAudit(database))
-	env.services.Alerts = service.NewAlertService(email, repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), repository.NewApps(database, database), repository.NewAlertDestinations(database), repository.NewWorkspaceAudit(database), box)
+	env.services.Updates = service.NewUpdateService("v0.2.0", releases.URL, env.updates, true, true, []string{"ada@example.com"}, repository.NewActivity(database))
+	env.services.Alerts = service.NewAlertService(email, repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), repository.NewApps(database, database), repository.NewAlertDestinations(database), repository.NewActivity(database), box)
 	env.services.Status = service.NewStatusService(env.services.Apps, env.services.Servers, nil)
 	env.tokens = service.NewAPITokenService(repository.NewAPITokens(database), workspaces)
 	tokenAuth := middleware.APITokenAuth(env.tokens, env.services.Users)

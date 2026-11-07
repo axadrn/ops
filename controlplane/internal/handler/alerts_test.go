@@ -29,7 +29,7 @@ func TestAlertsPageForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alerts := service.NewAlertService(service.NewEmailService(testutil.NewMemoryMailer(), "https://moin.example.com", "moin"), repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), repository.NewApps(database, database), repository.NewAlertDestinations(database), repository.NewWorkspaceAudit(database), box)
+	alerts := service.NewAlertService(service.NewEmailService(testutil.NewMemoryMailer(), "https://moin.example.com", "moin"), repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), repository.NewApps(database, database), repository.NewAlertDestinations(database), repository.NewActivity(database), box)
 	handler := NewAlertsHandler(alerts)
 	var got string
 	hook := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {

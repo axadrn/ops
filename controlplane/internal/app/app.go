@@ -94,7 +94,7 @@ func New(cfg *config.Config) (*App, error) {
 	workspaces := repository.NewWorkspaces(database)
 	members := repository.NewWorkspaceMembers(database)
 	invitations := repository.NewWorkspaceInvitations(database)
-	workspaceAuditEvents := repository.NewWorkspaceAudit(database)
+	activity := repository.NewActivity(database)
 	email := service.NewEmailService(mailer.NewProvider(cfg), cfg.AppURL, brand.Name)
 	// A self-hosted control plane may start without a bucket; files such as
 	// avatars wait for one.
@@ -111,9 +111,9 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	fileService := service.NewFileService(files, fileStorage)
 	subscriptionService := service.NewSubscriptionService(subscriptions, adminEvents)
-	subscriptionService.UseActivity(workspaceAuditEvents)
+	subscriptionService.UseActivity(activity)
 	workspaceService := service.NewWorkspaceService(
-		workspaces, members, invitations, workspaceAuditEvents, users,
+		workspaces, members, invitations, activity, users,
 		subscriptionService, email,
 	)
 	var paymentProvider payment.Provider
@@ -142,7 +142,7 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize secrets: %w", err)
 	}
-	serverService := service.NewServerService(repository.NewServers(database), workspaceAuditEvents, cfg.AppURL)
+	serverService := service.NewServerService(repository.NewServers(database), activity, cfg.AppURL)
 	appService := service.NewAppService(repository.NewApps(database, history), serverService, secrets)
 	serverService.RequirePlanFor(subscriptionService.Access)
 	// The catalog ships in content/catalog; its releases come from the
@@ -155,7 +155,7 @@ func New(cfg *config.Config) (*App, error) {
 	catalogCache := repository.NewCatalogCache(history)
 	catalogStore.UseCache(catalog.Cache{Load: catalogCache.Load, Save: catalogCache.Save})
 	catalogService := service.NewCatalogService(catalogStore, appService)
-	alertService := service.NewAlertService(email, workspaces, members, repository.NewApps(database, history), repository.NewAlertDestinations(database), workspaceAuditEvents, secrets)
+	alertService := service.NewAlertService(email, workspaces, members, repository.NewApps(database, history), repository.NewAlertDestinations(database), activity, secrets)
 	// The hosted plane posts alerts only to public addresses.
 	if cfg.Billing && !cfg.IsDevelopment() {
 		alertService.AllowOnlyPublicTargets()
@@ -191,7 +191,7 @@ func New(cfg *config.Config) (*App, error) {
 	oldAddress := service.NewOldAddressService(repository.NewOldAddressDays(history), cfg.OldURLs)
 	adminService.UseOldAddress(oldAddress)
 	if cfg.Billing {
-		adminService.UsePlans(subscriptions, workspaceAuditEvents)
+		adminService.UsePlans(subscriptions, activity)
 	}
 	application := &App{
 		Cfg: cfg, DB: database, HistoryDB: history, AuthService: auth, UserService: userService,
@@ -208,7 +208,7 @@ func New(cfg *config.Config) (*App, error) {
 		TelemetryService: service.NewTelemetryService(repository.NewTelemetry(database), cfg.TelemetryURL, build.Version, cfg.Telemetry && !cfg.Billing),
 		// Only a self-hosted control plane offers updates; the Deploy
 		// workflow updates the hosted one.
-		UpdateService:      service.NewUpdateService(build.Version, service.ReleasesURL, filepath.Join(dataDir, "update"), !cfg.Billing, cfg.UpdateCheck, cfg.AdminEmails, workspaceAuditEvents),
+		UpdateService:      service.NewUpdateService(build.Version, service.ReleasesURL, filepath.Join(dataDir, "update"), !cfg.Billing, cfg.UpdateCheck, cfg.AdminEmails, activity),
 		WorkspaceService:   workspaceService,
 		APITokenService:    apiTokenService,
 		DeviceLoginService: service.NewDeviceLoginService(repository.NewDeviceLogins(database), apiTokenService),

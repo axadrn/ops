@@ -45,7 +45,7 @@ func TestActivityNeverHoldsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := servers.audit.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 200)
+	events, err := servers.activity.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +82,9 @@ func TestActivityFiltersAndPages(t *testing.T) {
 	// Data edits name the app by ID; the activity keeps its name.
 	servers.record(owner, "data.row_deleted", "app", app.ID, map[string]string{"table": "orders", "row": "1"})
 
-	page := func(filter model.ActivityFilter, after string, limit int) []model.WorkspaceAuditEvent {
+	page := func(filter model.ActivityFilter, after string, limit int) []model.ActivityEvent {
 		t.Helper()
-		events, err := servers.audit.ListPage(owner.WorkspaceID, filter, after, limit)
+		events, err := servers.activity.ListPage(owner.WorkspaceID, filter, after, limit)
 		if err != nil {
 			t.Fatal(err)
 		}

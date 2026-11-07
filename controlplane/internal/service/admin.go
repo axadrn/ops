@@ -40,7 +40,7 @@ type AdminService struct {
 	// subscriptions and activity, when set, show and change who is free
 	// forever.
 	subscriptions *repository.Subscriptions
-	activity      *repository.WorkspaceAudit
+	activity      *repository.Activity
 	// oldAddress counts what still arrives on old addresses.
 	oldAddress *OldAddressService
 }
@@ -55,7 +55,7 @@ func NewAdminService(repo *repository.Admin, users *repository.Users, auth *Auth
 
 // UsePlans shows the plan of every user and lets admins make them free
 // forever. Without billing there are no plans to show.
-func (s *AdminService) UsePlans(subscriptions *repository.Subscriptions, activity *repository.WorkspaceAudit) {
+func (s *AdminService) UsePlans(subscriptions *repository.Subscriptions, activity *repository.Activity) {
 	s.subscriptions = subscriptions
 	s.activity = activity
 }
@@ -90,7 +90,7 @@ func (s *AdminService) Dashboard(user *model.User, session *model.Session, query
 		page = 1
 	}
 	now := time.Now()
-	if err := s.repository.DeleteAuditEventsBefore(now.Add(-model.AdminAuditRetention)); err != nil {
+	if err := s.repository.DeleteActivityEventsBefore(now.Add(-model.AdminActivityRetention)); err != nil {
 		return nil, err
 	}
 	metrics, err := s.repository.Metrics(now)
@@ -111,7 +111,7 @@ func (s *AdminService) Dashboard(user *model.User, session *model.Session, query
 	if totalPages == 0 {
 		totalPages = 1
 	}
-	events, err := s.repository.ListAuditEvents(50)
+	events, err := s.repository.ListActivityEvents(50)
 	if err != nil {
 		return nil, err
 	}
@@ -282,11 +282,11 @@ func (s *AdminService) SetForeverFree(actor *model.User, actorSession *model.Ses
 }
 
 func (s *AdminService) recordAdminAction(actorUserID, action, targetType, targetID string) error {
-	return s.repository.CreateAuditEvent(s.adminActionEvent(actorUserID, action, targetType, targetID))
+	return s.repository.CreateActivityEvent(s.adminActionEvent(actorUserID, action, targetType, targetID))
 }
 
-func (s *AdminService) adminActionEvent(actorUserID, action, targetType, targetID string) *model.AdminAuditEvent {
-	return &model.AdminAuditEvent{
+func (s *AdminService) adminActionEvent(actorUserID, action, targetType, targetID string) *model.AdminActivityEvent {
+	return &model.AdminActivityEvent{
 		ID:          uuid.New().String(),
 		ActorUserID: &actorUserID,
 		Action:      action,

@@ -30,7 +30,7 @@ func NewWorkspaceInvitations(db *sqlx.DB) *WorkspaceInvitations {
 	return &WorkspaceInvitations{db: db}
 }
 
-func (r *WorkspaceInvitations) Create(invitation *model.WorkspaceInvitation, event *model.WorkspaceAuditEvent) error {
+func (r *WorkspaceInvitations) Create(invitation *model.WorkspaceInvitation, event *model.ActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func (r *WorkspaceInvitations) Create(invitation *model.WorkspaceInvitation, eve
 	`, invitation.ID, invitation.WorkspaceID, invitation.Email, invitation.Role, invitation.TokenHash, invitation.InvitedBy, invitation.ExpiresAt, invitation.CreatedAt); err != nil {
 		return err
 	}
-	if err := insertAuditEvent(tx, event); err != nil {
+	if err := insertActivityEvent(tx, event); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -111,7 +111,7 @@ func (r *WorkspaceInvitations) ListPendingByWorkspace(workspaceID string, now ti
 	return invitations, err
 }
 
-func (r *WorkspaceInvitations) Revoke(workspaceID, invitationID string, revokedAt time.Time, event *model.WorkspaceAuditEvent) error {
+func (r *WorkspaceInvitations) Revoke(workspaceID, invitationID string, revokedAt time.Time, event *model.ActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -136,7 +136,7 @@ func (r *WorkspaceInvitations) Revoke(workspaceID, invitationID string, revokedA
 	if rows == 0 {
 		return ErrWorkspaceInvitationNotFound
 	}
-	if err := insertAuditEvent(tx, event); err != nil {
+	if err := insertActivityEvent(tx, event); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -146,7 +146,7 @@ func (r *WorkspaceInvitations) Revoke(workspaceID, invitationID string, revokedA
 // in its workspace and invitation.
 func (r *WorkspaceInvitations) Accept(
 	tokenHash, userID, email, memberID string,
-	event *model.WorkspaceAuditEvent,
+	event *model.ActivityEvent,
 	now time.Time,
 ) (*model.WorkspaceMember, error) {
 	var workspaceID string
@@ -244,7 +244,7 @@ func (r *WorkspaceInvitations) Accept(
 		return nil, ErrWorkspaceInvitationUsed
 	}
 	event.WorkspaceID, event.TargetType, event.TargetID = workspaceID, "workspace_invitation", invitation.ID
-	if err := insertAuditEvent(tx, event); err != nil {
+	if err := insertActivityEvent(tx, event); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

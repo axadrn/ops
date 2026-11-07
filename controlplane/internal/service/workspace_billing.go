@@ -87,6 +87,6 @@ func (s *WorkspaceService) BillingManagement(member *model.WorkspaceMember, work
 // logged, the checkout or the management page is open already.
 func (s *WorkspaceService) recordBilling(workspaceID, userID, action string, source Source) {
 	if err := s.RecordBillingAction(workspaceID, userID, action, source); err != nil {
-		slog.Warn("failed to record billing audit event", "error", err, "workspace_id", workspaceID)
+		slog.Warn("failed to record billing activity event", "error", err, "workspace_id", workspaceID)
 	}
 }

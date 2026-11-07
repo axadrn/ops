@@ -17,7 +17,7 @@ import (
 // page shows, Choices what it can be filtered by. Admin views see the client
 // IP and user agent.
 type ActivityView struct {
-	Events  []model.WorkspaceAuditEvent
+	Events  []model.ActivityEvent
 	Next    string
 	Filter  model.ActivityFilter
 	Choices model.ActivityChoices

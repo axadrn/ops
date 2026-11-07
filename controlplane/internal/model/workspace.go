@@ -27,7 +27,7 @@ const (
 	WorkspacePermissionDeleteWorkspace = "delete_workspace"
 	WorkspacePermissionManageMembers   = "manage_members"
 	WorkspacePermissionManageOwners    = "manage_owners"
-	WorkspacePermissionViewAuditLog    = "view_audit_log"
+	WorkspacePermissionViewActivity    = "view_activity"
 )
 
 type Workspace struct {

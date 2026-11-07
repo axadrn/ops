@@ -8,7 +8,7 @@ import (
 	"github.com/axadrn/moin/internal/client"
 )
 
-// WorkspaceAuditEvent is one change in the activity of a workspace.
+// ActivityEvent is one change in the activity of a workspace.
 //
 // What goes in: the exact time in UTC, who did it (the member, the API token
 // by name, a deploy hook, a GitHub push or moin itself), how it came in, the
@@ -20,7 +20,7 @@ import (
 // row contents or cell values, file contents and log lines of an app. A SQL
 // write keeps the kind of statement, its tables and the row count; a row edit
 // the table, row and column names.
-type WorkspaceAuditEvent struct {
+type ActivityEvent struct {
 	ID          string  `db:"id"`
 	WorkspaceID string  `db:"workspace_id"`
 	ActorUserID *string `db:"actor_user_id"`
@@ -61,7 +61,7 @@ type ActivityFilter struct {
 	User   string
 }
 
-func WorkspaceAuditActionLabel(action string) string {
+func ActivityActionLabel(action string) string {
 	switch action {
 	case "workspace.created":
 		return "Created the workspace"
@@ -91,7 +91,7 @@ func WorkspaceAuditActionLabel(action string) string {
 }
 
 // Details are the metadata of an event as key and value.
-func (e WorkspaceAuditEvent) Details() map[string]string {
+func (e ActivityEvent) Details() map[string]string {
 	details := map[string]string{}
 	_ = json.Unmarshal([]byte(e.Metadata), &details)
 	return details
@@ -99,7 +99,7 @@ func (e WorkspaceAuditEvent) Details() map[string]string {
 
 // Actor names who did it: the member's email, or GitHub, a deploy hook or moin
 // itself for changes that came without a member.
-func (e WorkspaceAuditEvent) Actor() string {
+func (e ActivityEvent) Actor() string {
 	switch {
 	case e.ActorEmail != "":
 		return e.ActorEmail
@@ -114,6 +114,6 @@ func (e WorkspaceAuditEvent) Actor() string {
 
 // ViaLabel names how a change came in, with the token it came with:
 // "CLI, token ci".
-func (e WorkspaceAuditEvent) ViaLabel() string {
+func (e ActivityEvent) ViaLabel() string {
 	return client.ViaLabel(e.Via, e.TokenName)
 }

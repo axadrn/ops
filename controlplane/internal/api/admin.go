@@ -50,8 +50,8 @@ type AdminUserPage struct {
 	TotalUsers int         `json:"total_users"`
 }
 
-// AdminAuditEvent is one entry of the admin audit log.
-type AdminAuditEvent struct {
+// AdminActivityEvent is one entry of the admin activity.
+type AdminActivityEvent struct {
 	ID          string    `json:"id"`
 	ActorUserID *string   `json:"actor_user_id"`
 	ActorEmail  string    `json:"actor_email"`
@@ -65,9 +65,9 @@ type AdminAuditEvent struct {
 
 // AdminDashboard is the JSON shape of model.AdminDashboard.
 type AdminDashboard struct {
-	Metrics AdminMetrics      `json:"metrics"`
-	Users   AdminUserPage     `json:"users"`
-	Events  []AdminAuditEvent `json:"events"`
+	Metrics AdminMetrics         `json:"metrics"`
+	Users   AdminUserPage        `json:"users"`
+	Events  []AdminActivityEvent `json:"events"`
 	// Network is only on the hosted control plane.
 	Network *AdminNetwork `json:"network,omitempty"`
 }
@@ -96,9 +96,9 @@ func NewAdminDashboard(dashboard *model.AdminDashboard) AdminDashboard {
 			IsAdmin:            user.IsAdmin,
 		})
 	}
-	events := make([]AdminAuditEvent, 0, len(dashboard.Events))
+	events := make([]AdminActivityEvent, 0, len(dashboard.Events))
 	for _, event := range dashboard.Events {
-		events = append(events, AdminAuditEvent{
+		events = append(events, AdminActivityEvent{
 			ID:          event.ID,
 			ActorUserID: event.ActorUserID,
 			ActorEmail:  event.ActorEmail,
@@ -135,7 +135,7 @@ func NewAdminDashboard(dashboard *model.AdminDashboard) AdminDashboard {
 }
 
 // Users returns the admin dashboard: metrics, one page of users filtered by
-// the query parameter, and the latest audit events.
+// the query parameter, and the latest activity events.
 func (h *AdminHandler) Users(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	dashboard, err := h.admin.Dashboard(

@@ -46,7 +46,7 @@ func TestUpdateAlertReachesEveryDestination(t *testing.T) {
 // updateActions counts the update.available entries of the activity.
 func updateActions(t *testing.T, catalogs *CatalogService) []string {
 	t.Helper()
-	events, err := catalogs.apps.servers.audit.ListByWorkspace(owner.WorkspaceID, 100)
+	events, err := catalogs.apps.servers.activity.ListByWorkspace(owner.WorkspaceID, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

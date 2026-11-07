@@ -30,7 +30,7 @@ func (r *Workspaces) CreateWithOwner(
 	workspace *model.Workspace,
 	member *model.WorkspaceMember,
 	subscription *model.Subscription,
-	event *model.WorkspaceAuditEvent,
+	event *model.ActivityEvent,
 ) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
@@ -59,7 +59,7 @@ func (r *Workspaces) CreateWithOwner(
 	`, subscription.ID, subscription.WorkspaceID, subscription.PlanID, subscription.Status, subscription.CurrentPeriodEnd, subscription.CreatedAt, subscription.UpdatedAt); err != nil {
 		return err
 	}
-	if err := insertAuditEvent(tx, event); err != nil {
+	if err := insertActivityEvent(tx, event); err != nil {
 		return err
 	}
 
@@ -103,7 +103,7 @@ func (r *Workspaces) ListForUser(userID string) ([]model.WorkspaceMembership, er
 	return workspaces, err
 }
 
-func (r *Workspaces) UpdateName(id, name string, updatedAt time.Time, event *model.WorkspaceAuditEvent) error {
+func (r *Workspaces) UpdateName(id, name string, updatedAt time.Time, event *model.ActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -120,13 +120,13 @@ func (r *Workspaces) UpdateName(id, name string, updatedAt time.Time, event *mod
 	if rows == 0 {
 		return ErrWorkspaceNotFound
 	}
-	if err := insertAuditEvent(tx, event); err != nil {
+	if err := insertActivityEvent(tx, event); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (r *Workspaces) DeleteIfBillingInactive(id string, now time.Time, adminEvent *model.AdminAuditEvent) error {
+func (r *Workspaces) DeleteIfBillingInactive(id string, now time.Time, adminEvent *model.AdminActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -153,11 +153,11 @@ func (r *Workspaces) DeleteIfBillingInactive(id string, now time.Time, adminEven
 	if _, err := tx.Exec(`DELETE FROM workspaces WHERE id = $1`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM admin_audit_events WHERE created_at < $1`, now.Add(-model.AdminAuditRetention)); err != nil {
+	if _, err := tx.Exec(`DELETE FROM admin_activity_events WHERE created_at < $1`, now.Add(-model.AdminActivityRetention)); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`
-		INSERT INTO admin_audit_events (
+		INSERT INTO admin_activity_events (
 			id, actor_user_id, workspace_id, action, target_type, target_id, metadata, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`, adminEvent.ID, adminEvent.ActorUserID, adminEvent.WorkspaceID, adminEvent.Action, adminEvent.TargetType, adminEvent.TargetID, adminEvent.Metadata, adminEvent.CreatedAt); err != nil {

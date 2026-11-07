@@ -28,7 +28,7 @@ func TestWorkspaceServiceInvitationFlowAndMultipleWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptInvitation() error = %v", err)
 	}
-	events, err := workspaces.AuditEvents(owner.Workspace.ID)
+	events, err := workspaces.Activity(owner.Workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,12 +78,12 @@ func TestWorkspaceServiceInvitationFlowAndMultipleWorkspaces(t *testing.T) {
 		t.Fatalf("RecordBillingAction() error = %v", err)
 	}
 
-	events, err = workspaces.AuditEvents(owner.Workspace.ID)
+	events, err = workspaces.Activity(owner.Workspace.ID)
 	if err != nil {
-		t.Fatalf("AuditEvents() error = %v", err)
+		t.Fatalf("Activity() error = %v", err)
 	}
-	if !hasAuditAction(events, "workspace.invitation.sent") || !hasAuditAction(events, "workspace.invitation.accepted") || !hasAuditAction(events, "billing.checkout_started") {
-		t.Fatalf("audit events = %#v", events)
+	if !hasActivityAction(events, "workspace.invitation.sent") || !hasActivityAction(events, "workspace.invitation.accepted") || !hasActivityAction(events, "billing.checkout_started") {
+		t.Fatalf("activity events = %#v", events)
 	}
 }
 
@@ -226,9 +226,9 @@ func TestWorkspaceDeletionRequiresBillingToEnd(t *testing.T) {
 	if _, err := repository.NewWorkspaces(database).ByID(owner.Workspace.ID); !errors.Is(err, repository.ErrWorkspaceNotFound) {
 		t.Fatalf("deleted workspace lookup error = %v, want ErrWorkspaceNotFound", err)
 	}
-	events, err := repository.NewAdmin(database).ListAuditEvents(10)
+	events, err := repository.NewAdmin(database).ListActivityEvents(10)
 	if err != nil {
-		t.Fatalf("ListAuditEvents() error = %v", err)
+		t.Fatalf("ListActivityEvents() error = %v", err)
 	}
 	if len(events) == 0 || events[0].Action != "workspace.deleted" || events[0].WorkspaceID == nil || *events[0].WorkspaceID != owner.Workspace.ID {
 		t.Fatalf("retained workspace deletion event = %#v", events)
@@ -318,7 +318,7 @@ func workspaceTestService(t *testing.T) (*sqlx.DB, *WorkspaceService, *testutil.
 		repository.NewWorkspaces(database),
 		repository.NewWorkspaceMembers(database),
 		repository.NewWorkspaceInvitations(database),
-		repository.NewWorkspaceAudit(database),
+		repository.NewActivity(database),
 		users,
 		subscriptions,
 		email,
@@ -355,7 +355,7 @@ func invitationTokenFromLastEmail(t *testing.T, mailer *testutil.MemoryMailer) s
 	return token
 }
 
-func hasAuditAction(events []model.WorkspaceAuditEvent, action string) bool {
+func hasActivityAction(events []model.ActivityEvent, action string) bool {
 	for _, event := range events {
 		if event.Action == action {
 			return true

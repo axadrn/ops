@@ -124,11 +124,11 @@ func TestUpdateStartAndSettle(t *testing.T) {
 	}))
 	defer github.Close()
 	database := testutil.NewDatabase(t)
-	audit := repository.NewWorkspaceAudit(database)
+	activity := repository.NewActivity(database)
 	admin := testutil.SeedUser(t, database, testutil.UserOptions{ID: "ada", Email: "Ada@example.com", Verified: true})
 	member := testutil.SeedUser(t, database, testutil.UserOptions{ID: "bob", Email: "bob@example.com", Verified: true})
 	dir := t.TempDir()
-	updates := NewUpdateService("v0.2.0", github.URL, dir, true, true, []string{"ada@example.com"}, audit)
+	updates := NewUpdateService("v0.2.0", github.URL, dir, true, true, []string{"ada@example.com"}, activity)
 	if err := updates.Check(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestUpdateStartAndSettle(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "finished")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("finished is still there: %v", err)
 	}
-	events, err := audit.ListByWorkspace(admin.Workspace.ID, 10)
+	events, err := activity.ListByWorkspace(admin.Workspace.ID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

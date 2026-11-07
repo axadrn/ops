@@ -125,11 +125,11 @@ Client setup, with a token from Settings, Tokens and the public URL of this serv
 - `internal/service/payment` contains the selected billing adapter.
 - `internal/access` contains signup policy, plans, features, limits, quotas, and lifecycle rules.
 - `internal/service/mailer` contains the selected mail adapter.
-- `internal/service/workspace.go` owns workspaces, roles, invitations, seats, and tenant audit history.
+- `internal/service/workspace.go` owns workspaces, roles, invitations, seats, and the activity.
 - `internal/storage` and `internal/service/file.go` own file storage.
 - `content/docs` and `internal/service/docs.go` contain the Docs module.
 
 ## Included product surface
 This project includes authentication with email links and passwords, email verification, password recovery, revocable database sessions, account settings, legal pages, SEO basics, security headers, structured logging, subscription billing, provider-agnostic product access, and a global operator Admin panel.
 OAuth provider: GitHub.
-It also includes workspaces with Owner, Admin, and Member roles, invitations, seat limits, workspace billing, and tenant audit history.
+It also includes workspaces with Owner, Admin, and Member roles, invitations, seat limits, workspace billing, and the activity.

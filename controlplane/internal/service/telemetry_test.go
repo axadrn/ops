@@ -18,7 +18,7 @@ func TestSelfHostedReportsAndHostedCounts(t *testing.T) {
 	// The hosted control plane, with one registered server of its own.
 	hostedDB := testutil.NewDatabase(t)
 	testutil.SeedUser(t, hostedDB, testutil.UserOptions{ID: "owner"})
-	servers := NewServerService(repository.NewServers(hostedDB), repository.NewWorkspaceAudit(hostedDB), "https://moin.example.com")
+	servers := NewServerService(repository.NewServers(hostedDB), repository.NewActivity(hostedDB), "https://moin.example.com")
 	_, installToken, err := servers.Create(owner, "web-1")
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestSelfHostedReportsAndHostedCounts(t *testing.T) {
 	// A self-hosted control plane with two servers sends its counts.
 	selfDB := testutil.NewDatabase(t)
 	testutil.SeedUser(t, selfDB, testutil.UserOptions{ID: "owner"})
-	selfServers := NewServerService(repository.NewServers(selfDB), repository.NewWorkspaceAudit(selfDB), "https://moin.example.com")
+	selfServers := NewServerService(repository.NewServers(selfDB), repository.NewActivity(selfDB), "https://moin.example.com")
 	for _, name := range []string{"a", "b"} {
 		_, token, err := selfServers.Create(owner, name)
 		if err != nil {

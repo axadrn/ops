@@ -563,7 +563,7 @@ func (s *AppService) ChangesWaiting(workspaceID string, app *model.App) (int, er
 	if err != nil {
 		return 0, err
 	}
-	return s.servers.audit.CountAppChanges(workspaceID, app.Name, waitingActions, live.CreatedAt)
+	return s.servers.activity.CountAppChanges(workspaceID, app.Name, waitingActions, live.CreatedAt)
 }
 
 // DomainCheck says whether a domain points at the app's server.

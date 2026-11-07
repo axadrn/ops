@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const AdminAuditRetention = 180 * 24 * time.Hour
+const AdminActivityRetention = 180 * 24 * time.Hour
 
 type AdminMetrics struct {
 	Users          int
@@ -47,13 +47,13 @@ type AdminUserPage struct {
 type AdminDashboard struct {
 	Metrics AdminMetrics
 	Users   AdminUserPage
-	Events  []AdminAuditEvent
+	Events  []AdminActivityEvent
 	// Network is everything moin runs, hosted and self-hosted; only the
 	// hosted control plane has it, since self-hosted ones report to it.
 	Network *Network
 }
 
-type AdminAuditEvent struct {
+type AdminActivityEvent struct {
 	ID          string    `db:"id"`
 	ActorUserID *string   `db:"actor_user_id"`
 	ActorEmail  string    `db:"actor_email"`
@@ -65,7 +65,7 @@ type AdminAuditEvent struct {
 	CreatedAt   time.Time `db:"created_at"`
 }
 
-func AdminAuditActionLabel(action string) string {
+func AdminActivityActionLabel(action string) string {
 	switch action {
 	case "admin.impersonation_started":
 		return "Impersonation started"

@@ -73,7 +73,7 @@ func newAppService(t *testing.T) (*AppService, *ServerService, *model.Server, *f
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner"})
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "other"})
-	servers := NewServerService(repository.NewServers(database), repository.NewWorkspaceAudit(database), "https://moin.example.com")
+	servers := NewServerService(repository.NewServers(database), repository.NewActivity(database), "https://moin.example.com")
 	box, err := secret.New(bytes.Repeat([]byte{1}, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -360,7 +360,7 @@ func TestDeleteAnOfflineServerTakesItsApps(t *testing.T) {
 			t.Errorf("%s is still there: %v", name, err)
 		}
 	}
-	events, err := servers.audit.ListByWorkspace(owner.WorkspaceID, 10)
+	events, err := servers.activity.ListByWorkspace(owner.WorkspaceID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

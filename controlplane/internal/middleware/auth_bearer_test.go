@@ -37,7 +37,7 @@ func newBearerTestEnvironment(t *testing.T) bearerTestEnvironment {
 		repository.NewWorkspaces(database),
 		repository.NewWorkspaceMembers(database),
 		repository.NewWorkspaceInvitations(database),
-		repository.NewWorkspaceAudit(database),
+		repository.NewActivity(database),
 		users,
 		subscriptions,
 		email,

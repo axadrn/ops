@@ -80,7 +80,7 @@ type WorkspacePermissions struct {
 	ManageOwners    bool `json:"manage_owners"`
 	ManageBilling   bool `json:"manage_billing"`
 	DeleteWorkspace bool `json:"delete_workspace"`
-	ViewAuditLog    bool `json:"view_audit_log"`
+	ViewActivity    bool `json:"view_activity"`
 }
 
 // Seats compares the member count with the plan limit. Limit is null when
@@ -381,7 +381,7 @@ func (h *WorkspaceHandler) Activity(w http.ResponseWriter, r *http.Request) {
 
 // NewActivityPage loads up to limit events of the member's workspace that
 // match the filter, newest first, after the event cursor points to. An empty cursor starts with the
-// newest event. Members who may not view the audit log get
+// newest event. Members who may not view the activity get
 // service.ErrActivityPermission. A cursor that does not decode or no longer
 // exists returns ErrInvalidCursor.
 func NewActivityPage(workspaces *service.WorkspaceService, member *model.WorkspaceMember, filter model.ActivityFilter, cursor string, limit int) (ActivityPage, error) {
@@ -394,8 +394,8 @@ func NewActivityPage(workspaces *service.WorkspaceService, member *model.Workspa
 		afterID = string(decoded)
 	}
 
-	events, next, err := workspaces.AuditEventsPage(member, filter, afterID, limit)
-	if errors.Is(err, repository.ErrAuditCursorNotFound) {
+	events, next, err := workspaces.ActivityPage(member, filter, afterID, limit)
+	if errors.Is(err, repository.ErrActivityCursorNotFound) {
 		return ActivityPage{}, ErrInvalidCursor
 	}
 	if err != nil {
@@ -439,6 +439,6 @@ func newWorkspacePermissions(member *model.WorkspaceMember) WorkspacePermissions
 		ManageOwners:    member.Can(model.WorkspacePermissionManageOwners),
 		ManageBilling:   member.Can(model.WorkspacePermissionManageBilling),
 		DeleteWorkspace: member.Can(model.WorkspacePermissionDeleteWorkspace),
-		ViewAuditLog:    member.Can(model.WorkspacePermissionViewAuditLog),
+		ViewActivity:    member.Can(model.WorkspacePermissionViewActivity),
 	}
 }

@@ -120,12 +120,12 @@ func TestAdminServiceAccessMetricsAndImpersonation(t *testing.T) {
 	if _, err := auth.AuthenticateSession(targetCookie.Value); !errors.Is(err, repository.ErrSessionNotFound) {
 		t.Fatalf("revoked target session error = %v, want ErrSessionNotFound", err)
 	}
-	events, err := adminRepository.ListAuditEvents(10)
+	events, err := adminRepository.ListActivityEvents(10)
 	if err != nil {
-		t.Fatalf("ListAuditEvents() error = %v", err)
+		t.Fatalf("ListActivityEvents() error = %v", err)
 	}
 	for _, action := range []string{"admin.impersonation_started", "admin.impersonation_stopped", "admin.sessions_revoked"} {
-		if !hasAdminAuditAction(events, action) {
+		if !hasAdminActivityAction(events, action) {
 			t.Fatalf("admin events missing %q: %#v", action, events)
 		}
 	}
@@ -175,7 +175,7 @@ func TestAdminSessionRevocationIncludesIssuedImpersonationSessions(t *testing.T)
 	}
 }
 
-func TestStopImpersonationSessionRollsBackWhenAuditCannotCommit(t *testing.T) {
+func TestStopImpersonationSessionRollsBackWhenActivityCannotCommit(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	operator := testutil.SeedUser(t, database, testutil.UserOptions{ID: "atomic-operator", Email: "atomic@example.com", Verified: true})
 	target := testutil.SeedUser(t, database, testutil.UserOptions{ID: "atomic-target"})
@@ -199,14 +199,14 @@ func TestStopImpersonationSessionRollsBackWhenAuditCannotCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AuthenticateSession() error = %v", err)
 	}
-	existingEvent := &model.AdminAuditEvent{
-		ID: "duplicate-audit", Action: "existing", TargetType: "user", TargetID: target.User.ID,
+	existingEvent := &model.AdminActivityEvent{
+		ID: "duplicate-activity", Action: "existing", TargetType: "user", TargetID: target.User.ID,
 		Metadata: "{}", CreatedAt: time.Now(),
 	}
-	if err := adminRepository.CreateAuditEvent(existingEvent); err != nil {
-		t.Fatalf("create existing audit event: %v", err)
+	if err := adminRepository.CreateActivityEvent(existingEvent); err != nil {
+		t.Fatalf("create existing activity event: %v", err)
 	}
-	failedEvent := &model.AdminAuditEvent{
+	failedEvent := &model.AdminActivityEvent{
 		ID: existingEvent.ID, Action: "admin.impersonation_stopped", TargetType: "user", TargetID: target.User.ID,
 		Metadata: "{}", CreatedAt: time.Now(),
 	}
@@ -216,10 +216,10 @@ func TestStopImpersonationSessionRollsBackWhenAuditCannotCommit(t *testing.T) {
 		operator.User.ID,
 		failedEvent,
 	); err == nil {
-		t.Fatal("StopImpersonationSession() error = nil, want duplicate audit error")
+		t.Fatal("StopImpersonationSession() error = nil, want duplicate activity error")
 	}
 	if _, err := auth.AuthenticateSession(impersonationCookie.Value); err != nil {
-		t.Fatalf("impersonation session was deleted after audit failure: %v", err)
+		t.Fatalf("impersonation session was deleted after activity failure: %v", err)
 	}
 
 	successRecorder := httptest.NewRecorder()
@@ -231,26 +231,26 @@ func TestStopImpersonationSessionRollsBackWhenAuditCannotCommit(t *testing.T) {
 	}
 }
 
-func TestAdminAuditRetention(t *testing.T) {
+func TestAdminActivityRetention(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	repo := repository.NewAdmin(database)
 	old := time.Now().Add(-181 * 24 * time.Hour)
-	if err := repo.CreateAuditEvent(&model.AdminAuditEvent{ID: "old", Action: "old", TargetType: "user", TargetID: "1", Metadata: "{}", CreatedAt: old}); err != nil {
-		t.Fatalf("CreateAuditEvent() error = %v", err)
+	if err := repo.CreateActivityEvent(&model.AdminActivityEvent{ID: "old", Action: "old", TargetType: "user", TargetID: "1", Metadata: "{}", CreatedAt: old}); err != nil {
+		t.Fatalf("CreateActivityEvent() error = %v", err)
 	}
-	if err := repo.CreateAuditEvent(&model.AdminAuditEvent{ID: "new", Action: "new", TargetType: "user", TargetID: "2", Metadata: "{}", CreatedAt: time.Now()}); err != nil {
-		t.Fatalf("CreateAuditEvent(new) error = %v", err)
+	if err := repo.CreateActivityEvent(&model.AdminActivityEvent{ID: "new", Action: "new", TargetType: "user", TargetID: "2", Metadata: "{}", CreatedAt: time.Now()}); err != nil {
+		t.Fatalf("CreateActivityEvent(new) error = %v", err)
 	}
-	events, err := repo.ListAuditEvents(10)
+	events, err := repo.ListActivityEvents(10)
 	if err != nil {
-		t.Fatalf("ListAuditEvents() error = %v", err)
+		t.Fatalf("ListActivityEvents() error = %v", err)
 	}
 	if len(events) != 1 || events[0].ID != "new" {
 		t.Fatalf("retained events = %#v", events)
 	}
 }
 
-func hasAdminAuditAction(events []model.AdminAuditEvent, action string) bool {
+func hasAdminActivityAction(events []model.AdminActivityEvent, action string) bool {
 	for _, event := range events {
 		if event.Action == action {
 			return true

@@ -35,7 +35,7 @@ func newAuthFlowEnvironment(t *testing.T) authFlowEnvironment {
 		repository.NewWorkspaces(database),
 		repository.NewWorkspaceMembers(database),
 		repository.NewWorkspaceInvitations(database),
-		repository.NewWorkspaceAudit(database),
+		repository.NewActivity(database),
 		userRepository,
 		subscriptionService,
 		emailService,

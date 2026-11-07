@@ -23,16 +23,16 @@ type AlertService struct {
 	members      *repository.WorkspaceMembers
 	apps         *repository.Apps
 	destinations *repository.AlertDestinations
-	audit        *repository.WorkspaceAudit
+	activity     *repository.Activity
 	box          *secret.Box
 	sender       *alertSender
 	now          func() time.Time
 }
 
-func NewAlertService(email *EmailService, workspaces *repository.Workspaces, members *repository.WorkspaceMembers, apps *repository.Apps, destinations *repository.AlertDestinations, audit *repository.WorkspaceAudit, box *secret.Box) *AlertService {
+func NewAlertService(email *EmailService, workspaces *repository.Workspaces, members *repository.WorkspaceMembers, apps *repository.Apps, destinations *repository.AlertDestinations, activity *repository.Activity, box *secret.Box) *AlertService {
 	return &AlertService{
 		email: email, workspaces: workspaces, members: members, apps: apps,
-		destinations: destinations, audit: audit, box: box,
+		destinations: destinations, activity: activity, box: box,
 		sender: newAlertSender(false), now: time.Now,
 	}
 }

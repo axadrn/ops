@@ -338,7 +338,7 @@ func TestWorkspaceActivityPagination(t *testing.T) {
 			created = same.Add(time.Duration(index) * time.Minute)
 		}
 		_, err := environment.database.Exec(`
-			INSERT INTO workspace_audit_events (id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at)
+			INSERT INTO activity_events (id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at)
 			VALUES ($1, $2, NULL, $3, 'workspace', $2, '{}', $4)
 		`, fmt.Sprintf("event-%02d", index), seeded.workspace.ID, "workspace.updated", created)
 		if err != nil {

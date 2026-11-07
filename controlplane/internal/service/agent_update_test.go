@@ -19,8 +19,8 @@ import (
 func TestUpdateAgent(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner"})
-	audit := repository.NewWorkspaceAudit(database)
-	servers := NewServerService(repository.NewServers(database), audit, "https://moin.example.com")
+	activity := repository.NewActivity(database)
+	servers := NewServerService(repository.NewServers(database), activity, "https://moin.example.com")
 	servers.downloads = t.TempDir()
 	server, installToken, err := servers.Create(owner, "web-1")
 	if err != nil {
@@ -87,7 +87,7 @@ func TestUpdateAgent(t *testing.T) {
 	if _, err := servers.UpdateAgent(ctx, owner, "web-1"); err != nil {
 		t.Fatal(err)
 	}
-	events, err := audit.ListByWorkspace(owner.WorkspaceID, 50)
+	events, err := activity.ListByWorkspace(owner.WorkspaceID, 50)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -89,8 +89,8 @@ func TestDiskState(t *testing.T) {
 func TestCheckDiskAlertsOnceAndAcrossRestarts(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner", Name: "Ada", Verified: true})
-	audit := repository.NewWorkspaceAudit(database)
-	servers := NewServerService(repository.NewServers(database), audit, "https://moin.example.com")
+	activity := repository.NewActivity(database)
+	servers := NewServerService(repository.NewServers(database), activity, "https://moin.example.com")
 	server, _, err := servers.Create(owner, "web-1")
 	if err != nil {
 		t.Fatal(err)
@@ -106,12 +106,12 @@ func TestCheckDiskAlertsOnceAndAcrossRestarts(t *testing.T) {
 		servers.checkDisk(server.ID, used<<30, total)
 	}
 	// A new control plane process, the disk still full.
-	restarted := NewServerService(repository.NewServers(database), audit, "https://moin.example.com")
+	restarted := NewServerService(repository.NewServers(database), activity, "https://moin.example.com")
 	connect(restarted)
 	for _, used := range []uint64{93, 91, 80, 82} {
 		restarted.checkDisk(server.ID, used<<30, total)
 	}
-	events, err := audit.ListByWorkspace(owner.WorkspaceID, 50)
+	events, err := activity.ListByWorkspace(owner.WorkspaceID, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,8 +188,8 @@ func TestBackupAndDiskAlertsReachEveryDestination(t *testing.T) {
 func TestStoreBackupStatusAlertsOnce(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner", Name: "Ada", Verified: true})
-	audit := repository.NewWorkspaceAudit(database)
-	servers := NewServerService(repository.NewServers(database), audit, "https://moin.example.com")
+	activity := repository.NewActivity(database)
+	servers := NewServerService(repository.NewServers(database), activity, "https://moin.example.com")
 	apps := NewAppService(repository.NewApps(database, database), servers, testBox(t))
 	server, _, err := servers.Create(owner, "web-1")
 	if err != nil {
@@ -204,7 +204,7 @@ func TestStoreBackupStatusAlertsOnce(t *testing.T) {
 		apps.storeBackupStatus(app, broken)
 	}
 	apps.storeBackupStatus(app, protocol.Backups{App: "shop", Databases: []protocol.DatabaseBackup{{Database: "postgres-db", Kind: "postgres"}}})
-	events, err := audit.ListByWorkspace(owner.WorkspaceID, 50)
+	events, err := activity.ListByWorkspace(owner.WorkspaceID, 50)
 	if err != nil {
 		t.Fatal(err)
 	}

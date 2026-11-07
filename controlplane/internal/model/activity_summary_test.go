@@ -270,7 +270,7 @@ var summaryCases = []struct{ action, target, metadata, want string }{
 // TestSummaryOfEveryKind: every kind of event reads as its own sentence.
 func TestSummaryOfEveryKind(t *testing.T) {
 	for _, c := range summaryCases {
-		event := WorkspaceAuditEvent{Action: c.action, TargetID: c.target, Metadata: c.metadata}
+		event := ActivityEvent{Action: c.action, TargetID: c.target, Metadata: c.metadata}
 		if got := event.Summary(); got != c.want {
 			t.Errorf("%s %s: Summary() = %q, want %q", c.action, c.metadata, got, c.want)
 		}

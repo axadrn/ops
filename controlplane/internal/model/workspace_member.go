@@ -22,13 +22,13 @@ func (m *WorkspaceMember) Can(permission string) bool {
 		return true
 	case WorkspaceRoleAdmin:
 		switch permission {
-		case WorkspacePermissionManageWorkspace, WorkspacePermissionManageMembers, WorkspacePermissionViewAuditLog:
+		case WorkspacePermissionManageWorkspace, WorkspacePermissionManageMembers, WorkspacePermissionViewActivity:
 			return true
 		}
 	case WorkspaceRoleMember:
 		// The activity shows who deployed and changed what; the whole team
 		// sees it.
-		return permission == WorkspacePermissionViewAuditLog
+		return permission == WorkspacePermissionViewActivity
 	}
 
 	return false

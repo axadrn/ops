@@ -97,14 +97,14 @@ templ adminUsers(users model.AdminUserPage) {
 }
 
 // AdminActivity is what operators did, newest first.
-templ AdminActivity(events []model.AdminAuditEvent) {
+templ AdminActivity(events []model.AdminActivityEvent) {
 	@layouts.Admin("Activity · Admin") {
 		@panelPage() {
 			@kit.Header(kit.Back{Label: "Admin", Href: "/admin"}, "Activity")
 			@kit.List() {
 				for _, event := range events {
 					@kit.Row(adminEventHref(event)) {
-						@kit.RowText(model.AdminAuditActionLabel(event.Action), adminEventNote(event))
+						@kit.RowText(model.AdminActivityActionLabel(event.Action), adminEventNote(event))
 						<time datetime={ event.CreatedAt.UTC().Format("2006-01-02T15:04:05Z") } title={ event.CreatedAt.UTC().Format("2006-01-02 15:04:05 UTC") } class="shrink-0 text-sm whitespace-nowrap text-muted-foreground tabular-nums">
 							{ event.CreatedAt.UTC().Format("Jan 2, 15:04:05") }
 						</time>
@@ -117,7 +117,7 @@ templ AdminActivity(events []model.AdminAuditEvent) {
 				}
 			}
 			@kit.Quiet() {
-				<span class="px-1">{ fmt.Sprintf("Kept %d days, in UTC.", int(model.AdminAuditRetention.Hours()/24)) }</span>
+				<span class="px-1">{ fmt.Sprintf("Kept %d days, in UTC.", int(model.AdminActivityRetention.Hours()/24)) }</span>
 			}
 		}
 	}
@@ -195,7 +195,7 @@ func adminNoUsers(query string) string {
 }
 
 // adminEventNote is who did it and to what.
-func adminEventNote(event model.AdminAuditEvent) string {
+func adminEventNote(event model.AdminActivityEvent) string {
 	actor := event.ActorEmail
 	if actor == "" {
 		actor = "System"
@@ -204,7 +204,7 @@ func adminEventNote(event model.AdminAuditEvent) string {
 }
 
 // adminEventHref is the page of what an event touched: a user has one.
-func adminEventHref(event model.AdminAuditEvent) string {
+func adminEventHref(event model.AdminActivityEvent) string {
 	if event.TargetType == "user" && event.TargetID != "" {
 		return "/admin/users/" + event.TargetID
 	}

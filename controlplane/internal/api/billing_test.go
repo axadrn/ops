@@ -103,9 +103,9 @@ func TestWorkspaceBillingCheckout(t *testing.T) {
 		t.Fatalf("checkout calls = %#v", calls)
 	}
 	var events int
-	err := environment.database.Get(&events, `SELECT COUNT(*) FROM workspace_audit_events WHERE workspace_id = $1 AND action = $2`, seeded.workspace.ID, "billing.checkout_started")
+	err := environment.database.Get(&events, `SELECT COUNT(*) FROM activity_events WHERE workspace_id = $1 AND action = $2`, seeded.workspace.ID, "billing.checkout_started")
 	if err != nil || events != 1 {
-		t.Fatalf("checkout audit events = %d, error = %v", events, err)
+		t.Fatalf("checkout activity events = %d, error = %v", events, err)
 	}
 
 	for _, test := range []struct {

@@ -55,7 +55,7 @@ func checkSites(t *testing.T, apps *AppService) *fakeSites {
 
 func activityActions(t *testing.T, servers *ServerService) []string {
 	t.Helper()
-	events, err := servers.audit.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 100)
+	events, err := servers.activity.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}

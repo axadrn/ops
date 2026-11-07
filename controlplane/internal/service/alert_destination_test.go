@@ -81,7 +81,7 @@ type alertFixture struct {
 	alerts   *AlertService
 	chat     *fakeChat
 	url      string
-	audit    *repository.WorkspaceAudit
+	activity *repository.Activity
 	owner    *model.WorkspaceMember
 	database *sqlx.DB
 }
@@ -91,9 +91,9 @@ func newAlertFixture(t *testing.T) alertFixture {
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner", Name: "Ada", Verified: true})
 	apps := repository.NewApps(database, database)
-	audit := repository.NewWorkspaceAudit(database)
-	alerts := NewAlertService(NewEmailService(testutil.NewMemoryMailer(), "https://moin.example.com", "moin"), repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), apps, repository.NewAlertDestinations(database), audit, testBox(t))
-	servers := NewServerService(repository.NewServers(database), audit, "https://moin.example.com")
+	activity := repository.NewActivity(database)
+	alerts := NewAlertService(NewEmailService(testutil.NewMemoryMailer(), "https://moin.example.com", "moin"), repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), apps, repository.NewAlertDestinations(database), activity, testBox(t))
+	servers := NewServerService(repository.NewServers(database), activity, "https://moin.example.com")
 	server, _, err := servers.Create(owner, "web-1")
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func newAlertFixture(t *testing.T) alertFixture {
 	fake := httptest.NewServer(chat)
 	t.Cleanup(fake.Close)
 	alerts.sender.telegramAPI = fake.URL + "/telegram"
-	return alertFixture{alerts: alerts, chat: chat, url: fake.URL, audit: audit, owner: &model.WorkspaceMember{WorkspaceID: owner.WorkspaceID, UserID: "owner", Role: model.WorkspaceRoleOwner}, database: database}
+	return alertFixture{alerts: alerts, chat: chat, url: fake.URL, activity: activity, owner: &model.WorkspaceMember{WorkspaceID: owner.WorkspaceID, UserID: "owner", Role: model.WorkspaceRoleOwner}, database: database}
 }
 
 // add stores a destination as AddDestination does, but to the fake, which
@@ -253,7 +253,7 @@ func TestFailingDestinationIsInTheActivityOnce(t *testing.T) {
 	f.chat.fail["/fail/SECRET-TOKEN"] = false
 	f.alerts.Send(owner.WorkspaceID, "server.up", "web-1", map[string]string{"duration": "1m0s"}, at)
 
-	events, err := f.audit.ListByWorkspace(owner.WorkspaceID, 50)
+	events, err := f.activity.ListByWorkspace(owner.WorkspaceID, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,7 @@ func TestAlertDestinationRules(t *testing.T) {
 		t.Fatalf("removed twice: %v", err)
 	}
 
-	events, err := f.audit.ListByWorkspace(owner.WorkspaceID, 50)
+	events, err := f.activity.ListByWorkspace(owner.WorkspaceID, 50)
 	if err != nil {
 		t.Fatal(err)
 	}

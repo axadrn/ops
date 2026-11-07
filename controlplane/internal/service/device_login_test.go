@@ -19,11 +19,11 @@ func (c *deviceClock) Now() time.Time { return c.now }
 func (c *deviceClock) Add(d time.Duration) { c.now = c.now.Add(d) }
 
 type deviceLoginEnvironment struct {
-	logins *DeviceLoginService
-	tokens *APITokenService
-	clock  *deviceClock
-	user   testutil.UserFixture
-	audit  *repository.WorkspaceAudit
+	logins   *DeviceLoginService
+	tokens   *APITokenService
+	clock    *deviceClock
+	user     testutil.UserFixture
+	activity *repository.Activity
 }
 
 func newDeviceLoginEnvironment(t *testing.T) deviceLoginEnvironment {
@@ -35,7 +35,7 @@ func newDeviceLoginEnvironment(t *testing.T) deviceLoginEnvironment {
 	tokens.now = clock.Now
 	logins := NewDeviceLoginService(repository.NewDeviceLogins(environment.database), tokens)
 	logins.now = clock.Now
-	return deviceLoginEnvironment{logins: logins, tokens: tokens, clock: clock, user: user, audit: repository.NewWorkspaceAudit(environment.database)}
+	return deviceLoginEnvironment{logins: logins, tokens: tokens, clock: clock, user: user, activity: repository.NewActivity(environment.database)}
 }
 
 func (e deviceLoginEnvironment) start(t *testing.T) StartedDeviceLogin {
@@ -99,7 +99,7 @@ func TestDeviceLoginGivesTheTokenOnceAfterApproval(t *testing.T) {
 	if _, _, err := e.poll(started); !errors.Is(err, ErrDeviceLoginInvalid) {
 		t.Fatalf("poll after the token = %v, want invalid", err)
 	}
-	events, err := e.audit.ListByWorkspace(e.user.Workspace.ID, 10)
+	events, err := e.activity.ListByWorkspace(e.user.Workspace.ID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

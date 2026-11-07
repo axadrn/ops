@@ -151,7 +151,7 @@ func (s *AlertService) AddDestination(member *model.WorkspaceMember, source Sour
 	if err := s.destinations.Create(destination); err != nil {
 		return model.AlertDestination{}, "", err
 	}
-	recordActivity(s.audit, s.now(), actor, "alert.added", "alert", name, map[string]string{"kind": kind, "events": destination.Events})
+	recordActivity(s.activity, s.now(), actor, "alert.added", "alert", name, map[string]string{"kind": kind, "events": destination.Events})
 	return destination, signingSecret, nil
 }
 
@@ -168,7 +168,7 @@ func (s *AlertService) RemoveDestination(member *model.WorkspaceMember, source S
 	if err := s.destinations.Delete(actor.WorkspaceID, destination.ID); err != nil {
 		return err
 	}
-	recordActivity(s.audit, s.now(), actor, "alert.removed", "alert", destination.Name, map[string]string{"kind": destination.Kind})
+	recordActivity(s.activity, s.now(), actor, "alert.removed", "alert", destination.Name, map[string]string{"kind": destination.Kind})
 	return nil
 }
 
@@ -204,7 +204,7 @@ func (s *AlertService) TestDestination(ctx context.Context, member *model.Worksp
 	if sendErr != nil {
 		result = sendErr.Error()
 	}
-	recordActivity(s.audit, s.now(), actor, "alert.tested", "alert", destination.Name, map[string]string{"kind": destination.Kind, "result": result})
+	recordActivity(s.activity, s.now(), actor, "alert.tested", "alert", destination.Name, map[string]string{"kind": destination.Kind, "result": result})
 	if updated, err := s.destinations.ByIDOrName(actor.WorkspaceID, destination.ID); err == nil {
 		destination = updated
 	}
@@ -251,9 +251,9 @@ func (s *AlertService) result(destination model.AlertDestination, err error, rec
 	system := System(destination.WorkspaceID)
 	switch {
 	case err != nil && destination.FailingSince == nil:
-		recordActivity(s.audit, s.now(), system, "alert.failed", "alert", destination.Name, map[string]string{"kind": destination.Kind, "error": failure})
+		recordActivity(s.activity, s.now(), system, "alert.failed", "alert", destination.Name, map[string]string{"kind": destination.Kind, "error": failure})
 	case err == nil && destination.FailingSince != nil:
-		recordActivity(s.audit, s.now(), system, "alert.recovered", "alert", destination.Name, map[string]string{"kind": destination.Kind})
+		recordActivity(s.activity, s.now(), system, "alert.recovered", "alert", destination.Name, map[string]string{"kind": destination.Kind})
 	}
 }
 

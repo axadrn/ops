@@ -284,7 +284,7 @@ func TestRolesStillApplyToTokens(t *testing.T) {
 
 func TestListActivityPagesWithTheCursor(t *testing.T) {
 	env := newEnvironment(t)
-	owner := seedOwner(t, env, "auditor")
+	owner := seedOwner(t, env, "watcher")
 	_, raw := createToken(t, env, owner, "read", "write")
 	session := connectHTTP(t, env, raw)
 	for _, name := range []string{"First Name", "Second Name", "Third Name"} {

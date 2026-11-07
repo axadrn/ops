@@ -4058,7 +4058,7 @@ paths:
       tags: [Workspaces]
       operationId: listWorkspaceActivity
       summary: List workspace activity
-      description: Audit events, newest first. Pass `next_cursor` as `cursor` to read the next page.
+      description: Activity events, newest first. Pass `next_cursor` as `cursor` to read the next page.
       parameters:
         - name: limit
           in: query
@@ -4323,7 +4323,7 @@ paths:
       tags: [Admin]
       operationId: getAdminDashboard
       summary: Get the admin dashboard
-      description: Metrics, one page of users, and the latest audit events.
+      description: Metrics, one page of users, and the latest activity events.
       parameters:
         - name: query
           in: query
@@ -6665,7 +6665,7 @@ components:
           format: date-time
     WorkspacePermissions:
       type: object
-      required: [manage_workspace, manage_members, manage_owners, manage_billing, delete_workspace, view_audit_log]
+      required: [manage_workspace, manage_members, manage_owners, manage_billing, delete_workspace, view_activity]
       properties:
         manage_workspace:
           type: boolean
@@ -6677,7 +6677,7 @@ components:
           type: boolean
         delete_workspace:
           type: boolean
-        view_audit_log:
+        view_activity:
           type: boolean
     WorkspaceDetail:
       type: object
@@ -6966,7 +6966,7 @@ components:
           type: integer
         total_users:
           type: integer
-    AdminAuditEvent:
+    AdminActivityEvent:
       type: object
       required: [id, actor_user_id, actor_email, workspace_id, action, target_type, target_id, metadata, created_at]
       properties:
@@ -7043,7 +7043,7 @@ components:
         events:
           type: array
           items:
-            $ref: '#/components/schemas/AdminAuditEvent'
+            $ref: '#/components/schemas/AdminActivityEvent'
         network:
           description: Everything moin runs, hosted and self-hosted. Only on the hosted control plane.
           type: object

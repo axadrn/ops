@@ -61,7 +61,7 @@ func (h *WorkspaceHandler) ActivityPage(w http.ResponseWriter, r *http.Request) 
 	query := r.URL.Query()
 	after := query.Get("after")
 	filter := model.ActivityFilter{App: query.Get("app"), Server: query.Get("server"), User: query.Get("user")}
-	events, next, err := h.workspaces.AuditEventsPage(member, filter, after, 50)
+	events, next, err := h.workspaces.ActivityPage(member, filter, after, 50)
 	if errors.Is(err, service.ErrActivityPermission) {
 		w.WriteHeader(http.StatusForbidden)
 		render(w, r, pages.ErrorPage(http.StatusForbidden, "Access denied", "You do not have permission to view workspace activity."))

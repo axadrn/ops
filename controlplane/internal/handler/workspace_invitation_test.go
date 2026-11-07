@@ -242,7 +242,7 @@ func invitationHandlerTestSetup(t *testing.T) (*sqlx.DB, *service.WorkspaceServi
 		repository.NewWorkspaces(database),
 		repository.NewWorkspaceMembers(database),
 		repository.NewWorkspaceInvitations(database),
-		repository.NewWorkspaceAudit(database),
+		repository.NewActivity(database),
 		users,
 		service.NewSubscriptionService(repository.NewSubscriptions(database), repository.NewAdmin(database)),
 		email,

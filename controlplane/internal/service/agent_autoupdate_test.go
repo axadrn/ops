@@ -17,8 +17,8 @@ import (
 func TestAgentsUpdateThemselves(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner"})
-	audit := repository.NewWorkspaceAudit(database)
-	servers := NewServerService(repository.NewServers(database), audit, "https://moin.example.com")
+	activity := repository.NewActivity(database)
+	servers := NewServerService(repository.NewServers(database), activity, "https://moin.example.com")
 	servers.downloads = t.TempDir()
 	if err := os.WriteFile(filepath.Join(servers.downloads, build.Name+"-linux-arm64"), []byte("new agent"), 0o755); err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestAgentsUpdateThemselves(t *testing.T) {
 	// The update ends once the new agent is back and the activity notes it.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		events, err := audit.ListByWorkspace(owner.WorkspaceID, 50)
+		events, err := activity.ListByWorkspace(owner.WorkspaceID, 50)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -90,15 +90,15 @@ func System(workspaceID string) Actor {
 // values, secrets, tokens, passwords, SQL text, row contents or cell values,
 // file contents and log lines of an app. moin keeps none of the user's data,
 // so details only ever hold names, numbers and settings.
-func recordActivity(audit *repository.WorkspaceAudit, at time.Time, actor Actor, action, targetType, target string, details map[string]string) {
-	if audit == nil || actor.WorkspaceID == "" {
+func recordActivity(activity *repository.Activity, at time.Time, actor Actor, action, targetType, target string, details map[string]string) {
+	if activity == nil || actor.WorkspaceID == "" {
 		return
 	}
 	if details == nil {
 		details = map[string]string{}
 	}
 	metadata, _ := json.Marshal(details)
-	event := &model.WorkspaceAuditEvent{
+	event := &model.ActivityEvent{
 		ID:          uuid.New().String(),
 		WorkspaceID: actor.WorkspaceID,
 		Action:      action,
@@ -116,7 +116,7 @@ func recordActivity(audit *repository.WorkspaceAudit, at time.Time, actor Actor,
 	}
 	switch targetType {
 	case "app":
-		app, server, err := audit.AppServer(actor.WorkspaceID, target)
+		app, server, err := activity.AppServer(actor.WorkspaceID, target)
 		if err != nil {
 			slog.Warn("find the app of an activity failed", "workspace_id", actor.WorkspaceID, "error", err)
 		}
@@ -130,7 +130,7 @@ func recordActivity(audit *repository.WorkspaceAudit, at time.Time, actor Actor,
 	case "server":
 		event.Server = target
 	}
-	err := audit.Create(event)
+	err := activity.Create(event)
 	if err != nil {
 		slog.Error("record activity failed", "workspace_id", actor.WorkspaceID, "action", action, "error", err)
 	}
@@ -141,7 +141,7 @@ func recordActivity(audit *repository.WorkspaceAudit, at time.Time, actor Actor,
 // email alert, in the background so no check or deploy waits on mail.
 func (s *ServerService) record(actor Actor, action, targetType, target string, details map[string]string) {
 	at := s.now()
-	recordActivity(s.audit, at, actor, action, targetType, target, details)
+	recordActivity(s.activity, at, actor, action, targetType, target, details)
 	if s.alerts != nil && actor.WorkspaceID != "" && alerted(action) {
 		go s.alerts.Send(actor.WorkspaceID, action, target, details, at)
 	}
@@ -154,5 +154,5 @@ func (s *ServerService) SendAlerts(alerts *AlertService) {
 
 // record writes what an actor did to the activity of the workspace.
 func (s *WorkspaceService) record(actor Actor, action, targetType, target string, details map[string]string) {
-	recordActivity(s.audit, time.Now(), actor, action, targetType, target, details)
+	recordActivity(s.activity, time.Now(), actor, action, targetType, target, details)
 }

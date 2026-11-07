@@ -125,12 +125,12 @@ func TestEndPaidAccessClearsProviderSubscriptionState(t *testing.T) {
 	if err := subscriptionService.UpdateSubscription(subscription); err != nil {
 		t.Fatalf("repeated UpdateSubscription() error = %v", err)
 	}
-	events, err := repository.NewAdmin(database).ListAuditEvents(10)
+	events, err := repository.NewAdmin(database).ListActivityEvents(10)
 	if err != nil {
-		t.Fatalf("ListAuditEvents() error = %v", err)
+		t.Fatalf("ListActivityEvents() error = %v", err)
 	}
 	if len(events) != 1 || events[0].Action != "subscription.updated" || events[0].WorkspaceID == nil || *events[0].WorkspaceID != fixture.Workspace.ID {
-		t.Fatalf("subscription audit events = %#v", events)
+		t.Fatalf("subscription activity events = %#v", events)
 	}
 }
 
@@ -138,7 +138,7 @@ func TestProviderEventIDsPreserveRepeatedSubscriptionTransitions(t *testing.T) {
 	for _, provider := range []string{model.ProviderStripe, model.ProviderPolar} {
 		t.Run(provider, func(t *testing.T) {
 			database := testutil.NewDatabase(t)
-			fixture := testutil.SeedUser(t, database, testutil.UserOptions{ID: "audit-transition-" + provider})
+			fixture := testutil.SeedUser(t, database, testutil.UserOptions{ID: "activity-transition-" + provider})
 			subscriptions := NewSubscriptionService(repository.NewSubscriptions(database), repository.NewAdmin(database))
 			providerSubscriptionID := "subscription-" + provider
 			periodEnd := time.Now().Add(30 * 24 * time.Hour).UTC().Truncate(time.Second)
@@ -162,12 +162,12 @@ func TestProviderEventIDsPreserveRepeatedSubscriptionTransitions(t *testing.T) {
 				}
 			}
 
-			events, err := repository.NewAdmin(database).ListAuditEvents(10)
+			events, err := repository.NewAdmin(database).ListActivityEvents(10)
 			if err != nil {
-				t.Fatalf("ListAuditEvents() error = %v", err)
+				t.Fatalf("ListActivityEvents() error = %v", err)
 			}
 			if len(events) != 3 {
-				t.Fatalf("subscription audit event count = %d, want 3", len(events))
+				t.Fatalf("subscription activity event count = %d, want 3", len(events))
 			}
 		})
 	}
@@ -229,7 +229,7 @@ func TestCheckoutStateRejectsConcurrentCreationAndReusesOpenURL(t *testing.T) {
 		t.Fatalf("paid BeginCheckout() error = %v, want ErrSubscriptionAlreadyPaid", err)
 	}
 	workspaceID := fixture.Workspace.ID
-	deleteEvent := &model.AdminAuditEvent{
+	deleteEvent := &model.AdminActivityEvent{
 		ID:          "delete-event-checkout-marker",
 		WorkspaceID: &workspaceID,
 		Action:      "workspace.deleted",

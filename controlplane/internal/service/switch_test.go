@@ -40,7 +40,7 @@ func TestSetAutoDeployNeedsNoGitHub(t *testing.T) {
 	if _, err := apps.SetAutoDeploy(owner, "blog", true); err != nil {
 		t.Fatal(err)
 	}
-	events, _ := servers.audit.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 50)
+	events, _ := servers.activity.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 50)
 	var summaries []string
 	for _, event := range events {
 		if event.Action == "repo.auto_deploy" {

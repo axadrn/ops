@@ -21,10 +21,10 @@ func TestMigrationsCreateSelectedSchema(t *testing.T) {
 
 	expected := map[string]bool{
 		"users": true, "tokens": true, "sessions": true,
-		"subscriptions": true, "admin_audit_events": true,
+		"subscriptions": true, "admin_activity_events": true,
 		"profiles": false,
 		"files":    true, "newsletter_subscribers": false,
-		"workspaces": true, "workspace_members": true, "workspace_invitations": true, "workspace_audit_events": true,
+		"workspaces": true, "workspace_members": true, "workspace_invitations": true, "activity_events": true,
 		"goals": false, "goal_entries": false,
 	}
 	for table, want := range expected {

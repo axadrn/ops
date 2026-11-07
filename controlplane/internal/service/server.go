@@ -43,10 +43,10 @@ func (e *AgentError) Error() string { return "agent: " + e.Message }
 // ServerService manages servers and the live sessions of their agents. The
 // sessions live in memory: there is one control plane process.
 type ServerService struct {
-	audit   *repository.WorkspaceAudit
-	servers *repository.Servers
-	appURL  string
-	now     func() time.Time
+	activity *repository.Activity
+	servers  *repository.Servers
+	appURL   string
+	now      func() time.Time
 	// downloads holds the binaries agents update to.
 	downloads string
 
@@ -85,9 +85,9 @@ type agentSession struct {
 	goneOnce sync.Once
 }
 
-func NewServerService(servers *repository.Servers, audit *repository.WorkspaceAudit, appURL string) *ServerService {
+func NewServerService(servers *repository.Servers, activity *repository.Activity, appURL string) *ServerService {
 	return &ServerService{
-		audit:       audit,
+		activity:    activity,
 		servers:     servers,
 		appURL:      strings.TrimRight(appURL, "/"),
 		downloads:   DownloadsDir,

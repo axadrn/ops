@@ -48,10 +48,10 @@ func TestWorkspaceMemberRepositoryProtectsLastOwner(t *testing.T) {
 	owner := testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner", Name: "Owner"})
 	workspaceMemberRepository := repository.NewWorkspaceMembers(database)
 
-	if err := workspaceMemberRepository.UpdateRole(owner.Workspace.ID, owner.User.ID, owner.WorkspaceMember.ID, model.WorkspaceRoleMember, testAudit(owner.Workspace.ID, owner.User.ID, "change-last-owner-role")); !errors.Is(err, repository.ErrLastOwner) {
+	if err := workspaceMemberRepository.UpdateRole(owner.Workspace.ID, owner.User.ID, owner.WorkspaceMember.ID, model.WorkspaceRoleMember, testActivity(owner.Workspace.ID, owner.User.ID, "change-last-owner-role")); !errors.Is(err, repository.ErrLastOwner) {
 		t.Fatalf("change last owner role error = %v, want ErrLastOwner", err)
 	}
-	if err := workspaceMemberRepository.Delete(owner.Workspace.ID, owner.User.ID, owner.WorkspaceMember.ID, testAudit(owner.Workspace.ID, owner.User.ID, "remove-last-owner")); !errors.Is(err, repository.ErrLastOwner) {
+	if err := workspaceMemberRepository.Delete(owner.Workspace.ID, owner.User.ID, owner.WorkspaceMember.ID, testActivity(owner.Workspace.ID, owner.User.ID, "remove-last-owner")); !errors.Is(err, repository.ErrLastOwner) {
 		t.Fatalf("delete last owner error = %v, want ErrLastOwner", err)
 	}
 
@@ -62,7 +62,7 @@ func TestWorkspaceMemberRepositoryProtectsLastOwner(t *testing.T) {
 	`, "member-second-owner", owner.Workspace.ID, second.ID, model.WorkspaceRoleOwner, time.Now()); err != nil {
 		t.Fatalf("add second owner: %v", err)
 	}
-	if err := workspaceMemberRepository.UpdateRole(owner.Workspace.ID, second.ID, owner.WorkspaceMember.ID, model.WorkspaceRoleMember, testAudit(owner.Workspace.ID, second.ID, "owner-role-changed")); err != nil {
+	if err := workspaceMemberRepository.UpdateRole(owner.Workspace.ID, second.ID, owner.WorkspaceMember.ID, model.WorkspaceRoleMember, testActivity(owner.Workspace.ID, second.ID, "owner-role-changed")); err != nil {
 		t.Fatalf("change owner role with second owner: %v", err)
 	}
 }
@@ -83,11 +83,11 @@ func TestAdminCannotRaceOwnerPromotion(t *testing.T) {
 		results := make(chan error, 2)
 		go func() {
 			<-start
-			results <- members.UpdateRole(owner.Workspace.ID, owner.User.ID, targetMembershipID, model.WorkspaceRoleOwner, testAudit(owner.Workspace.ID, owner.User.ID, "owner-promotes"))
+			results <- members.UpdateRole(owner.Workspace.ID, owner.User.ID, targetMembershipID, model.WorkspaceRoleOwner, testActivity(owner.Workspace.ID, owner.User.ID, "owner-promotes"))
 		}()
 		go func() {
 			<-start
-			results <- members.UpdateRole(owner.Workspace.ID, admin.ID, targetMembershipID, model.WorkspaceRoleAdmin, testAudit(owner.Workspace.ID, admin.ID, "admin-changes"))
+			results <- members.UpdateRole(owner.Workspace.ID, admin.ID, targetMembershipID, model.WorkspaceRoleAdmin, testActivity(owner.Workspace.ID, admin.ID, "admin-changes"))
 		}()
 		close(start)
 
@@ -123,11 +123,11 @@ func TestAdminCannotRaceOwnerPromotionAndRemoval(t *testing.T) {
 		results := make(chan result, 2)
 		go func() {
 			<-start
-			results <- result{"promote", members.UpdateRole(owner.Workspace.ID, owner.User.ID, targetMembershipID, model.WorkspaceRoleOwner, testAudit(owner.Workspace.ID, owner.User.ID, "owner-promotes-remove-target"))}
+			results <- result{"promote", members.UpdateRole(owner.Workspace.ID, owner.User.ID, targetMembershipID, model.WorkspaceRoleOwner, testActivity(owner.Workspace.ID, owner.User.ID, "owner-promotes-remove-target"))}
 		}()
 		go func() {
 			<-start
-			results <- result{"remove", members.Delete(owner.Workspace.ID, admin.ID, targetMembershipID, testAudit(owner.Workspace.ID, admin.ID, "admin-removes"))}
+			results <- result{"remove", members.Delete(owner.Workspace.ID, admin.ID, targetMembershipID, testActivity(owner.Workspace.ID, admin.ID, "admin-removes"))}
 		}()
 		close(start)
 
@@ -163,7 +163,7 @@ func TestInvitationAcceptanceValidatesEmailAndExpiry(t *testing.T) {
 	now := time.Now()
 
 	createInvitation(t, workspaceInvitationRepository, owner, "email-invitation", invitee.Email, "email-secret", now)
-	if _, err := workspaceInvitationRepository.Accept(invitationHash("email-secret"), invitee.ID, "someone-else@example.com", "wrong-email-member", &model.WorkspaceAuditEvent{ID: "wrong-email-audit", Metadata: "{}"}, now); !errors.Is(err, repository.ErrWorkspaceInvitationEmail) {
+	if _, err := workspaceInvitationRepository.Accept(invitationHash("email-secret"), invitee.ID, "someone-else@example.com", "wrong-email-member", &model.ActivityEvent{ID: "wrong-email-activity", Metadata: "{}"}, now); !errors.Is(err, repository.ErrWorkspaceInvitationEmail) {
 		t.Fatalf("wrong email error = %v, want ErrWorkspaceInvitationEmail", err)
 	}
 
@@ -177,10 +177,10 @@ func TestInvitationAcceptanceValidatesEmailAndExpiry(t *testing.T) {
 		ExpiresAt:   now.Add(-time.Minute),
 		CreatedAt:   now.Add(-time.Hour),
 	}
-	if err := workspaceInvitationRepository.Create(expired, testAudit(owner.Workspace.ID, owner.User.ID, "expired-invitation")); err != nil {
+	if err := workspaceInvitationRepository.Create(expired, testActivity(owner.Workspace.ID, owner.User.ID, "expired-invitation")); err != nil {
 		t.Fatalf("create expired invitation: %v", err)
 	}
-	if _, err := workspaceInvitationRepository.Accept(invitationHash("expired-secret"), invitee.ID, expired.Email, "expired-member", &model.WorkspaceAuditEvent{ID: "expired-audit", Metadata: "{}"}, now); !errors.Is(err, repository.ErrWorkspaceInvitationExpired) {
+	if _, err := workspaceInvitationRepository.Accept(invitationHash("expired-secret"), invitee.ID, expired.Email, "expired-member", &model.ActivityEvent{ID: "expired-activity", Metadata: "{}"}, now); !errors.Is(err, repository.ErrWorkspaceInvitationExpired) {
 		t.Fatalf("expired invitation error = %v, want ErrWorkspaceInvitationExpired", err)
 	}
 }
@@ -199,12 +199,12 @@ func TestInvitationCannotBeAcceptedAndRevokedConcurrently(t *testing.T) {
 	results := make(chan error, 2)
 	go func() {
 		<-start
-		_, err := workspaceInvitationRepository.Accept(invitationHash("revoke-race-secret"), invitee.ID, invitee.Email, "revoke-race-member", &model.WorkspaceAuditEvent{ID: "revoke-race-accept-audit", Metadata: "{}"}, time.Now())
+		_, err := workspaceInvitationRepository.Accept(invitationHash("revoke-race-secret"), invitee.ID, invitee.Email, "revoke-race-member", &model.ActivityEvent{ID: "revoke-race-accept-activity", Metadata: "{}"}, time.Now())
 		results <- err
 	}()
 	go func() {
 		<-start
-		results <- workspaceInvitationRepository.Revoke(owner.Workspace.ID, "revoke-race-invitation", time.Now(), testAudit(owner.Workspace.ID, owner.User.ID, "revoke-race"))
+		results <- workspaceInvitationRepository.Revoke(owner.Workspace.ID, "revoke-race-invitation", time.Now(), testActivity(owner.Workspace.ID, owner.User.ID, "revoke-race"))
 	}()
 	close(start)
 
@@ -264,7 +264,7 @@ func createInvitation(t *testing.T, workspaceInvitationRepository *repository.Wo
 		ExpiresAt:   now.Add(time.Hour),
 		CreatedAt:   now,
 	}
-	if err := workspaceInvitationRepository.Create(invitation, testAudit(owner.Workspace.ID, owner.User.ID, "workspace.invitation.sent."+id)); err != nil {
+	if err := workspaceInvitationRepository.Create(invitation, testActivity(owner.Workspace.ID, owner.User.ID, "workspace.invitation.sent."+id)); err != nil {
 		t.Fatalf("create invitation %s: %v", id, err)
 	}
 }
@@ -274,9 +274,9 @@ func invitationHash(token string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func testAudit(workspaceID, actorID, id string) *model.WorkspaceAuditEvent {
-	return &model.WorkspaceAuditEvent{
-		ID:          "audit-" + id,
+func testActivity(workspaceID, actorID, id string) *model.ActivityEvent {
+	return &model.ActivityEvent{
+		ID:          "activity-" + id,
 		WorkspaceID: workspaceID,
 		ActorUserID: &actorID,
 		Action:      id,

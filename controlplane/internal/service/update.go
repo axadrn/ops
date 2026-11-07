@@ -75,7 +75,7 @@ type UpdateService struct {
 	check      bool
 	dir        string
 	admins     map[string]struct{}
-	audit      *repository.WorkspaceAudit
+	activity   *repository.Activity
 	client     *http.Client
 	now        func() time.Time
 
@@ -88,14 +88,14 @@ type UpdateService struct {
 // NewUpdateService checks url for releases when check is on. dir is where
 // the request, status and heartbeat files of the updater live. selfHosted
 // is false on the hosted control plane, which shows no update at all.
-func NewUpdateService(version, url, dir string, selfHosted, check bool, adminEmails []string, audit *repository.WorkspaceAudit) *UpdateService {
+func NewUpdateService(version, url, dir string, selfHosted, check bool, adminEmails []string, activity *repository.Activity) *UpdateService {
 	admins := make(map[string]struct{}, len(adminEmails))
 	for _, address := range adminEmails {
 		admins[strings.ToLower(strings.TrimSpace(address))] = struct{}{}
 	}
 	return &UpdateService{
 		version: version, url: url, dir: dir, selfHosted: selfHosted, check: check && selfHosted,
-		admins: admins, audit: audit,
+		admins: admins, activity: activity,
 		client: &http.Client{Timeout: 10 * time.Second}, now: time.Now,
 	}
 }
@@ -271,7 +271,7 @@ func (s *UpdateService) Start(actor Actor, user *model.User) (model.VersionInfo,
 	if err := writeFileAtomic(filepath.Join(s.dir, "request"), []byte(strings.Join(lines, "\n")+"\n")); err != nil {
 		return info, err
 	}
-	recordActivity(s.audit, at, actor, "controlplane.update_started", "controlplane", info.Latest, map[string]string{"from": s.version, "to": info.Latest})
+	recordActivity(s.activity, at, actor, "controlplane.update_started", "controlplane", info.Latest, map[string]string{"from": s.version, "to": info.Latest})
 	return s.Info(user), nil
 }
 
@@ -298,13 +298,13 @@ func (s *UpdateService) Settle() {
 	}
 	switch state.State {
 	case UpdateDone:
-		recordActivity(s.audit, state.At, actor, "controlplane.updated", "controlplane", state.Version, details)
+		recordActivity(s.activity, state.At, actor, "controlplane.updated", "controlplane", state.Version, details)
 	case UpdateRolledBack:
 		details["reason"] = clipText(state.Reason, 300)
-		recordActivity(s.audit, state.At, actor, "controlplane.rolled_back", "controlplane", state.Version, details)
+		recordActivity(s.activity, state.At, actor, "controlplane.rolled_back", "controlplane", state.Version, details)
 	default:
 		details["reason"] = clipText(state.Reason, 300)
-		recordActivity(s.audit, state.At, actor, "controlplane.update_failed", "controlplane", state.Version, details)
+		recordActivity(s.activity, state.At, actor, "controlplane.update_failed", "controlplane", state.Version, details)
 	}
 }
 

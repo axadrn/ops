@@ -79,7 +79,7 @@ func (r *WorkspaceMembers) CountOwners(workspaceID string) (int, error) {
 	return count, err
 }
 
-func (r *WorkspaceMembers) UpdateRole(workspaceID, actorUserID, memberID, role string, event *model.WorkspaceAuditEvent) error {
+func (r *WorkspaceMembers) UpdateRole(workspaceID, actorUserID, memberID, role string, event *model.ActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -130,14 +130,14 @@ func (r *WorkspaceMembers) UpdateRole(workspaceID, actorUserID, memberID, role s
 	if rows == 0 {
 		return ErrWorkspaceMemberNotFound
 	}
-	event.Metadata = auditMetadata(map[string]string{"email": userEmail(tx, current.UserID), "from": current.Role, "to": role})
-	if err := insertAuditEvent(tx, event); err != nil {
+	event.Metadata = activityMetadata(map[string]string{"email": userEmail(tx, current.UserID), "from": current.Role, "to": role})
+	if err := insertActivityEvent(tx, event); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (r *WorkspaceMembers) Delete(workspaceID, actorUserID, memberID string, event *model.WorkspaceAuditEvent) error {
+func (r *WorkspaceMembers) Delete(workspaceID, actorUserID, memberID string, event *model.ActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -186,9 +186,9 @@ func (r *WorkspaceMembers) Delete(workspaceID, actorUserID, memberID string, eve
 		return ErrWorkspaceMemberNotFound
 	}
 	if !isLeaving {
-		event.Metadata = auditMetadata(map[string]string{"user_id": current.UserID, "email": userEmail(tx, current.UserID), "role": current.Role})
+		event.Metadata = activityMetadata(map[string]string{"user_id": current.UserID, "email": userEmail(tx, current.UserID), "role": current.Role})
 	}
-	if err := insertAuditEvent(tx, event); err != nil {
+	if err := insertActivityEvent(tx, event); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -201,7 +201,7 @@ func userEmail(tx *sqlx.Tx, userID string) string {
 	return email
 }
 
-func auditMetadata(values map[string]string) string {
+func activityMetadata(values map[string]string) string {
 	encoded, err := json.Marshal(values)
 	if err != nil {
 		return "{}"
@@ -256,7 +256,7 @@ func (r *WorkspaceMembers) DeleteUserIfOwnershipSafe(userID string) error {
 	now := time.Now().UTC()
 	for _, workspaceID := range workspaceIDs {
 		actor := userID
-		err := insertAuditEvent(tx, &model.WorkspaceAuditEvent{
+		err := insertActivityEvent(tx, &model.ActivityEvent{
 			ID:          uuid.New().String(),
 			WorkspaceID: workspaceID,
 			ActorUserID: &actor,

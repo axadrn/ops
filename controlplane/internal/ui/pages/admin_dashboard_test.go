@@ -93,7 +93,7 @@ func TestAdminFreeForeverAsksForTheEmail(t *testing.T) {
 
 func TestAdminActivityShowsEventsAndTheirKeep(t *testing.T) {
 	workspaceID := "workspace-1"
-	html := renderAdmin(t, AdminActivity([]model.AdminAuditEvent{{
+	html := renderAdmin(t, AdminActivity([]model.AdminActivityEvent{{
 		ID: "event-1", ActorEmail: "operator@example.com", WorkspaceID: &workspaceID,
 		Action: "workspace.deleted", TargetType: "workspace", TargetID: workspaceID, CreatedAt: time.Now(),
 	}, {

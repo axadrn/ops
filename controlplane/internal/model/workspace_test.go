@@ -14,11 +14,11 @@ func TestMembershipCapabilities(t *testing.T) {
 		{WorkspaceRoleOwner, WorkspacePermissionManageOwners, true},
 		{WorkspaceRoleAdmin, WorkspacePermissionManageWorkspace, true},
 		{WorkspaceRoleAdmin, WorkspacePermissionManageMembers, true},
-		{WorkspaceRoleAdmin, WorkspacePermissionViewAuditLog, true},
+		{WorkspaceRoleAdmin, WorkspacePermissionViewActivity, true},
 		{WorkspaceRoleAdmin, WorkspacePermissionManageBilling, false},
 		{WorkspaceRoleAdmin, WorkspacePermissionManageOwners, false},
 		{WorkspaceRoleMember, WorkspacePermissionManageMembers, false},
-		{WorkspaceRoleMember, WorkspacePermissionViewAuditLog, true},
+		{WorkspaceRoleMember, WorkspacePermissionViewActivity, true},
 	}
 
 	for _, test := range tests {

@@ -8,7 +8,7 @@ func TestSummaryOfLink(t *testing.T) {
 		`{"repo":"axadrn/blog","branch":"main","auto_deploy":"false"}`: "linked blog to axadrn/blog on main, deploys only by hand",
 		`{"repo":"axadrn/blog","branch":"main"}`:                       "linked blog to axadrn/blog on main",
 	} {
-		event := WorkspaceAuditEvent{Action: "repo.linked", TargetType: "app", TargetID: "blog", Metadata: metadata}
+		event := ActivityEvent{Action: "repo.linked", TargetType: "app", TargetID: "blog", Metadata: metadata}
 		if got := event.Summary(); got != want {
 			t.Errorf("Summary() = %q, want %q", got, want)
 		}
@@ -23,7 +23,7 @@ func TestSummaryOfUptime(t *testing.T) {
 		{"server.down", "web-1", `{"since":"2026-11-03 14:02 UTC"}`, "lost web-1: its agent has not answered since 2026-11-03 14:02 UTC"},
 		{"server.up", "web-1", `{"duration":"12m0s"}`, "has web-1 back after 12m0s"},
 	} {
-		event := WorkspaceAuditEvent{Action: c.action, TargetID: c.target, Metadata: c.metadata}
+		event := ActivityEvent{Action: c.action, TargetID: c.target, Metadata: c.metadata}
 		if got := event.Summary(); got != c.want {
 			t.Errorf("%s: Summary() = %q, want %q", c.action, got, c.want)
 		}

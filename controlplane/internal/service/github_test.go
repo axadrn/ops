@@ -201,7 +201,7 @@ func TestGitHubDeploys(t *testing.T) {
 	if err := apps.UnlinkRepo(owner, "blog"); err != nil {
 		t.Fatalf("unlink without a repo: %v", err)
 	}
-	if events, _ := servers.audit.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 50); slices.ContainsFunc(events, func(e model.WorkspaceAuditEvent) bool { return e.Action == "repo.unlinked" }) {
+	if events, _ := servers.activity.ListPage(owner.WorkspaceID, model.ActivityFilter{}, "", 50); slices.ContainsFunc(events, func(e model.ActivityEvent) bool { return e.Action == "repo.unlinked" }) {
 		t.Fatal("unlink without a repo shows in the activity")
 	}
 	if _, err := apps.LinkRepo(ctx, owner, "blog", "someone/else", "", true); !errors.Is(err, ErrRepo) {

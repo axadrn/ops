@@ -19,7 +19,7 @@ func newServerService(t *testing.T) *ServerService {
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner"})
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "other"})
-	return NewServerService(repository.NewServers(database), repository.NewWorkspaceAudit(database), "https://moin.example.com/")
+	return NewServerService(repository.NewServers(database), repository.NewActivity(database), "https://moin.example.com/")
 }
 
 var testHello = protocol.Hello{ProtocolVersion: protocol.Version, AgentVersion: "v0.1.0", Hostname: "box", OS: "linux", Arch: "arm64"}

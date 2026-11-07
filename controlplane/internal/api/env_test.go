@@ -63,7 +63,7 @@ func newAPIEnvironment(t *testing.T) *apiEnvironment {
 		repository.NewWorkspaces(database),
 		repository.NewWorkspaceMembers(database),
 		repository.NewWorkspaceInvitations(database),
-		repository.NewWorkspaceAudit(database),
+		repository.NewActivity(database),
 		userRepository,
 		subscriptions,
 		email,
@@ -99,15 +99,15 @@ func newAPIEnvironment(t *testing.T) *apiEnvironment {
 	adminHandler := api.NewAdminHandler(environment.admin)
 
 	clientIPs := middleware.NewClientIPResolver(nil)
-	audit := repository.NewWorkspaceAudit(database)
-	servers := service.NewServerService(repository.NewServers(database), audit, "https://app.example.com")
-	environment.updates = service.NewUpdateService("v0.2.0", "http://127.0.0.1:1/releases", t.TempDir(), false, true, []string{testAdminEmail}, audit)
+	activity := repository.NewActivity(database)
+	servers := service.NewServerService(repository.NewServers(database), activity, "https://app.example.com")
+	environment.updates = service.NewUpdateService("v0.2.0", "http://127.0.0.1:1/releases", t.TempDir(), false, true, []string{testAdminEmail}, activity)
 	box, err := secret.New(bytes.Repeat([]byte{1}, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
 	apps := service.NewAppService(repository.NewApps(database, database), servers, box)
-	alerts := service.NewAlertService(email, repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), repository.NewApps(database, database), repository.NewAlertDestinations(database), audit, box)
+	alerts := service.NewAlertService(email, repository.NewWorkspaces(database), repository.NewWorkspaceMembers(database), repository.NewApps(database, database), repository.NewAlertDestinations(database), activity, box)
 	handlers := api.Handlers{
 		Version:     api.NewVersionHandler(environment.updates, servers),
 		Meta:        api.NewMetaHandler(testSupportEmail),

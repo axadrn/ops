@@ -5,11 +5,11 @@ import "strings"
 // Summary says what happened, to follow the actor: "deployed blog v12".
 // Each kind of event has its sentence in one of the lists below; a kind
 // without one reads as its label, or as itself.
-func (e WorkspaceAuditEvent) Summary() string {
+func (e ActivityEvent) Summary() string {
 	if summarize, ok := summaries[e.Action]; ok {
 		return summarize(e.TargetID, e.Details())
 	}
-	label := WorkspaceAuditActionLabel(e.Action)
+	label := ActivityActionLabel(e.Action)
 	if label == e.Action {
 		return e.Action
 	}

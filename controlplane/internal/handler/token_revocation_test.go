@@ -42,7 +42,7 @@ func newTokenRevocationTest(t *testing.T) *tokenRevocationTest {
 		repository.NewWorkspaces(database),
 		repository.NewWorkspaceMembers(database),
 		repository.NewWorkspaceInvitations(database),
-		repository.NewWorkspaceAudit(database),
+		repository.NewActivity(database),
 		users,
 		subscriptions,
 		email,

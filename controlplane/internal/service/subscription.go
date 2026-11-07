@@ -14,15 +14,15 @@ import (
 )
 
 type SubscriptionService struct {
-	repo       *repository.Subscriptions
-	adminAudit *repository.Admin
+	repo          *repository.Subscriptions
+	adminActivity *repository.Admin
 	// activity, when set, gets plan and status changes of a workspace.
-	activity *repository.WorkspaceAudit
+	activity *repository.Activity
 }
 
 // UseActivity writes plan and status changes to the activity of the
 // workspace.
-func (s *SubscriptionService) UseActivity(activity *repository.WorkspaceAudit) {
+func (s *SubscriptionService) UseActivity(activity *repository.Activity) {
 	s.activity = activity
 }
 
@@ -46,8 +46,8 @@ func (s *SubscriptionService) current(workspaceID string) *model.Subscription {
 	return sub
 }
 
-func NewSubscriptionService(repo *repository.Subscriptions, adminAudit *repository.Admin) *SubscriptionService {
-	return &SubscriptionService{repo: repo, adminAudit: adminAudit}
+func NewSubscriptionService(repo *repository.Subscriptions, adminActivity *repository.Admin) *SubscriptionService {
+	return &SubscriptionService{repo: repo, adminActivity: adminActivity}
 }
 
 func (s *SubscriptionService) CreateFreeSubscription(workspaceID string) error {
@@ -149,7 +149,7 @@ func (s *SubscriptionService) UpdateSubscription(sub *model.Subscription, provid
 		eventID = providerEventID[0]
 	}
 	if err := s.recordSubscriptionUpdate(sub, eventID); err != nil {
-		return fmt.Errorf("record subscription audit event: %w", err)
+		return fmt.Errorf("record subscription activity event: %w", err)
 	}
 
 	return nil
@@ -193,15 +193,15 @@ func (s *SubscriptionService) UpdateProviderState(
 	if updated {
 		s.recordPlanChange(before, sub)
 	}
-	auditSubscription := sub
+	activitySubscription := sub
 	if !updated {
-		auditSubscription, err = s.repo.ByWorkspaceID(sub.WorkspaceID)
+		activitySubscription, err = s.repo.ByWorkspaceID(sub.WorkspaceID)
 		if err != nil {
-			return false, fmt.Errorf("load current subscription for audit: %w", err)
+			return false, fmt.Errorf("load current subscription for activity: %w", err)
 		}
 	}
-	if err := s.recordSubscriptionUpdate(auditSubscription, ""); err != nil {
-		return updated, fmt.Errorf("record subscription audit event: %w", err)
+	if err := s.recordSubscriptionUpdate(activitySubscription, ""); err != nil {
+		return updated, fmt.Errorf("record subscription activity event: %w", err)
 	}
 	return updated, nil
 }
@@ -272,7 +272,7 @@ func (s *SubscriptionService) recordSubscriptionUpdate(sub *model.Subscription, 
 		}, "|")
 	}
 	workspaceID := sub.WorkspaceID
-	event := &model.AdminAuditEvent{
+	event := &model.AdminActivityEvent{
 		ID:          uuid.NewSHA1(uuid.NameSpaceOID, []byte(key)).String(),
 		WorkspaceID: &workspaceID,
 		Action:      "subscription.updated",
@@ -281,5 +281,5 @@ func (s *SubscriptionService) recordSubscriptionUpdate(sub *model.Subscription, 
 		Metadata:    string(metadata),
 		CreatedAt:   time.Now(),
 	}
-	return s.adminAudit.CreateAuditEvent(event)
+	return s.adminActivity.CreateActivityEvent(event)
 }

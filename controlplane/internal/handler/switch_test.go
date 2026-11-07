@@ -40,7 +40,7 @@ func newSwitches(t *testing.T) *switches {
 	if err != nil {
 		t.Fatal(err)
 	}
-	servers := service.NewServerService(repository.NewServers(database), repository.NewWorkspaceAudit(database), "https://moin.example.com")
+	servers := service.NewServerService(repository.NewServers(database), repository.NewActivity(database), "https://moin.example.com")
 	apps := service.NewAppService(repository.NewApps(database, database), servers, box)
 	users := service.NewUserService(repository.NewUsers(database), nil, nil, nil)
 	s := &switches{t: t, database: database, ada: ada, apps: apps, servers: servers, users: users, handler: NewAppsHandler(apps, servers, users, nil)}
@@ -114,7 +114,7 @@ func switchOn(t *testing.T, body, id string) bool {
 
 func activity(t *testing.T, s *switches, action string) int {
 	t.Helper()
-	events, err := repository.NewWorkspaceAudit(s.database).ListPage(s.ada.Workspace.ID, model.ActivityFilter{}, "", 100)
+	events, err := repository.NewActivity(s.database).ListPage(s.ada.Workspace.ID, model.ActivityFilter{}, "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}

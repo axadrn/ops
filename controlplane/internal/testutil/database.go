@@ -89,8 +89,8 @@ func SeedUser(t testing.TB, database *sqlx.DB, options UserOptions) UserFixture 
 		UpdatedAt:   now,
 	}
 	actor := options.ID
-	event := &model.WorkspaceAuditEvent{
-		ID:          "audit-" + options.ID,
+	event := &model.ActivityEvent{
+		ID:          "activity-" + options.ID,
 		WorkspaceID: workspaceID,
 		ActorUserID: &actor,
 		Action:      "workspace.created",

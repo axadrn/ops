@@ -10,7 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// Admin reads what the operator pages show and stores their audit events.
+// Admin reads what the operator pages show and stores their activity events.
 type Admin struct {
 	db *sqlx.DB
 }
@@ -97,17 +97,17 @@ func (r *Admin) User(id string, now time.Time) (*model.AdminUser, error) {
 	return &user, nil
 }
 
-func (r *Admin) CreateAuditEvent(event *model.AdminAuditEvent) error {
+func (r *Admin) CreateActivityEvent(event *model.AdminActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM admin_audit_events WHERE created_at < $1`, event.CreatedAt.Add(-model.AdminAuditRetention)); err != nil {
+	if _, err := tx.Exec(`DELETE FROM admin_activity_events WHERE created_at < $1`, event.CreatedAt.Add(-model.AdminActivityRetention)); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`
-		INSERT INTO admin_audit_events (
+		INSERT INTO admin_activity_events (
 			id, actor_user_id, workspace_id, action, target_type, target_id, metadata, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (id) DO NOTHING
@@ -117,7 +117,7 @@ func (r *Admin) CreateAuditEvent(event *model.AdminAuditEvent) error {
 	return tx.Commit()
 }
 
-func (r *Admin) StopImpersonationSession(sessionID, targetUserID, operatorUserID string, event *model.AdminAuditEvent) error {
+func (r *Admin) StopImpersonationSession(sessionID, targetUserID, operatorUserID string, event *model.AdminActivityEvent) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -134,11 +134,11 @@ func (r *Admin) StopImpersonationSession(sessionID, targetUserID, operatorUserID
 	if err := requireSessionRow(result); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM admin_audit_events WHERE created_at < $1`, event.CreatedAt.Add(-model.AdminAuditRetention)); err != nil {
+	if _, err := tx.Exec(`DELETE FROM admin_activity_events WHERE created_at < $1`, event.CreatedAt.Add(-model.AdminActivityRetention)); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`
-		INSERT INTO admin_audit_events (
+		INSERT INTO admin_activity_events (
 			id, actor_user_id, workspace_id, action, target_type, target_id, metadata, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`, event.ID, event.ActorUserID, event.WorkspaceID, event.Action, event.TargetType, event.TargetID, event.Metadata, event.CreatedAt); err != nil {
@@ -147,11 +147,11 @@ func (r *Admin) StopImpersonationSession(sessionID, targetUserID, operatorUserID
 	return tx.Commit()
 }
 
-func (r *Admin) ListAuditEvents(limit int) ([]model.AdminAuditEvent, error) {
-	events := []model.AdminAuditEvent{}
+func (r *Admin) ListActivityEvents(limit int) ([]model.AdminActivityEvent, error) {
+	events := []model.AdminActivityEvent{}
 	err := r.db.Select(&events, `
 		SELECT e.*, COALESCE(u.email, '') AS actor_email
-		FROM admin_audit_events e
+		FROM admin_activity_events e
 		LEFT JOIN users u ON u.id = e.actor_user_id
 		ORDER BY e.created_at DESC, e.id DESC
 		LIMIT $1
@@ -159,8 +159,8 @@ func (r *Admin) ListAuditEvents(limit int) ([]model.AdminAuditEvent, error) {
 	return events, err
 }
 
-func (r *Admin) DeleteAuditEventsBefore(cutoff time.Time) error {
-	_, err := r.db.Exec(`DELETE FROM admin_audit_events WHERE created_at < $1`, cutoff)
+func (r *Admin) DeleteActivityEventsBefore(cutoff time.Time) error {
+	_, err := r.db.Exec(`DELETE FROM admin_activity_events WHERE created_at < $1`, cutoff)
 	return err
 }
 

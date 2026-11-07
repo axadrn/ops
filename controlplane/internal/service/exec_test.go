@@ -76,7 +76,7 @@ func TestExec(t *testing.T) {
 	if start.App != "shop" || start.Service != "db" || len(start.Argv) != 3 || start.Timeout != protocol.ExecTimeout {
 		t.Errorf("exec.start = %+v", start)
 	}
-	events, err := servers.audit.ListByWorkspace(owner.WorkspaceID, 10)
+	events, err := servers.activity.ListByWorkspace(owner.WorkspaceID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
