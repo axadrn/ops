@@ -114,7 +114,7 @@ func (s *AlertService) appsOn(workspaceID, server string) string {
 	return "Apps on it: " + strings.Join(names, ", ") + "."
 }
 
-// stillLive says which release is live after a failed deploy: a failed
+// stillLive says which deploy is live after a failed deploy: a failed
 // build leaves it as it is, and a failed start starts it again.
 func (s *AlertService) stillLive(workspaceID, appName string) string {
 	app, err := s.apps.ByIDOrNameForWorkspace(appName, workspaceID)

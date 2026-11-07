@@ -31,7 +31,7 @@ func (m model) appActions(name string) []action {
 			return m.ask1("Redeploy "+name+"?", "It builds the newest source or pulls the image again, and swaps when it is healthy.", "redeploy", false, m.redeploy(name)), nil
 		}},
 		{"T", "restart", func(m model) (tea.Model, tea.Cmd) {
-			return m.ask1("Restart "+name+"?", "The live release starts again with today's env and domains.", "restart", false, m.restart(name)), nil
+			return m.ask1("Restart "+name+"?", "The live deploy starts again with today's env and domains.", "restart", false, m.restart(name)), nil
 		}},
 	}
 	if a.Stopped {
@@ -43,7 +43,7 @@ func (m model) appActions(name string) []action {
 	}
 	out = append(out,
 		action{"P", "roll back", func(m model) (tea.Model, tea.Cmd) {
-			return m.ask1("Roll back "+name+"?", "The release before the live one starts again.", "roll back", false, m.rollback(name, 0)), nil
+			return m.ask1("Roll back "+name+"?", "The deploy before the live one starts again.", "roll back", false, m.rollback(name, 0)), nil
 		}},
 		action{"I", "deploy image", func(m model) (tea.Model, tea.Cmd) {
 			return m.input("Deploy an image to "+name, "an image built in CI, like ghcr.io/acme/shop:1.4", "", func(m model, v string) (model, tea.Cmd) {

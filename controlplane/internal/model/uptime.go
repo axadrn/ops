@@ -71,7 +71,7 @@ type UptimeHour struct {
 }
 
 // UptimeTarget is a live app the checker visits: its domains and what its
-// live release detected, as JSON.
+// live deploy detected, as JSON.
 type UptimeTarget struct {
 	AppID       string `db:"id"`
 	WorkspaceID string `db:"workspace_id"`

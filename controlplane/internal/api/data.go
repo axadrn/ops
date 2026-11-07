@@ -61,7 +61,7 @@ func (r RowRequest) row() service.RowKey {
 	return service.RowKey{RowID: r.RowID, Key: r.Key}
 }
 
-// Databases lists the databases of the app's live release: SQLite files and Postgres services.
+// Databases lists the databases of the app's live deploy: SQLite files and Postgres services.
 func (h *AppsHandler) Databases(w http.ResponseWriter, r *http.Request) {
 	workspace := ctxkeys.Workspace(r.Context())
 	_, databases, err := h.apps.Databases(workspace.ID, r.PathValue("app"))

@@ -214,7 +214,7 @@ func (m model) deploysTab(u ui, w, h int, a client.App) string {
 		}
 	}
 	det = append(det, "", u.keys(kb{"enter", "log"}, kb{"r", "roll back"}))
-	return hjoin(2, list, u.panel("Release", "", det, rw, h, false))
+	return hjoin(2, list, u.panel("Deploy", "", det, rw, h, false))
 }
 
 // deployState is a deploy's status word and label: the live one is live,

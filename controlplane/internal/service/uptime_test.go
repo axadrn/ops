@@ -88,7 +88,7 @@ func TestUptimeChecksEveryDomainAndRecordsOutages(t *testing.T) {
 	// Before the first deploy nothing is checked.
 	apps.CheckUptime(ctx)
 	if len(sites.visits("blog.de")) != 0 {
-		t.Fatal("an app without a live release was checked")
+		t.Fatal("an app without a live deploy was checked")
 	}
 	_, uptime, err := apps.Uptime(owner.WorkspaceID, "blog")
 	if err != nil || uptime.State != model.UptimePending || len(uptime.Domains) != 2 {

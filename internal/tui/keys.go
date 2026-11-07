@@ -628,7 +628,7 @@ func (m model) confirmAgentUpdate(sv client.Server) (tea.Model, tea.Cmd) {
 func (m model) confirmRollback(app string, d client.Deploy) (tea.Model, tea.Cmd) {
 	a, _ := m.findApp(app)
 	if d.Number == a.LiveNumber {
-		return m.ask1("Roll back "+app+"?", fmt.Sprintf("v%d is live. This starts the release before it again.", d.Number), "roll back", false, m.rollback(app, 0)), nil
+		return m.ask1("Roll back "+app+"?", fmt.Sprintf("v%d is live. This starts the deploy before it again.", d.Number), "roll back", false, m.rollback(app, 0)), nil
 	}
 	return m.ask1(fmt.Sprintf("Roll back %s to v%d?", app, d.Number), "Its images start again with today's env and domains.", "roll back", false, m.rollback(app, d.Number)), nil
 }

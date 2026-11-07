@@ -249,7 +249,7 @@ func leftOver(report *protocol.ServerConfigResult) bool {
 }
 
 // tunnelHosts are the domains of every app on a server: the ones set
-// through moin and the ones x-moin set in the live release.
+// through moin and the ones x-moin set in the live deploy.
 func (s *AppService) tunnelHosts(server *model.Server) ([]string, error) {
 	apps, err := s.apps.ListByWorkspaceID(server.WorkspaceID)
 	if err != nil {

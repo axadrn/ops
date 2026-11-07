@@ -30,7 +30,7 @@ func registerAppTools(server *mcpsdk.Server, services Services) {
 		"Pins an app, or unpins it with pinned false, and returns it. Every list of the workspace shows pinned apps above the others that run fine, on every surface. Needs a token with read and write access.",
 		change(false, true)), Write(changes(services, tools.pinApp)))
 	mcpsdk.AddTool(server, newTool("restart_app", "Restart an app",
-		"Starts the live release of an app again with its env vars, domains and protection as they are now, without a build. Use it after set_env. A stopped app runs again. Returns the deploy; follow it with get_deploy. Needs a token with read and write access.",
+		"Starts the live deploy of an app again with its env vars, domains and protection as they are now, without a build. Use it after set_env. A stopped app runs again. Returns the deploy; follow it with get_deploy. Needs a token with read and write access.",
 		change(false, false)), Write(changes(services, tools.restart)))
 	mcpsdk.AddTool(server, newTool("stop_app", "Stop an app",
 		"Stops the containers of an app. It stays offline, also after a reboot of the server, until start_app, restart_app or a deploy. Its data and settings stay. Needs a token with read and write access.",

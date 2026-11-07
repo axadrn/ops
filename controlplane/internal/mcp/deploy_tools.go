@@ -18,13 +18,13 @@ func registerDeployTools(server *mcpsdk.Server, services Services) {
 		"Returns one deploy with its full log. Poll it to follow a running deploy until the status is succeeded or failed. Needs the read scope.",
 		readOnly("")), Read(member(services, tools.getDeploy)))
 	mcpsdk.AddTool(server, newTool("rollback_app", "Roll back an app",
-		"Starts the images of an earlier successful deploy again, with the env it had. Number 0 means the one before the live deploy. Returns the new deploy; follow it with get_deploy. It replaces the live release, so ask the user first. Needs a token with read and write access.",
+		"Starts the images of an earlier successful deploy again, with the env it had. Number 0 means the one before the live deploy. Returns the new deploy; follow it with get_deploy. It replaces the live deploy, so ask the user first. Needs a token with read and write access.",
 		change(true, false)), Write(changes(services, tools.rollback)))
 	mcpsdk.AddTool(server, newTool("redeploy_app", "Redeploy an app",
 		"Builds the source of the newest deploy again on the app's server, with the env as it is now. Returns the new deploy; follow it with get_deploy. Needs a token with read and write access.",
 		change(false, false)), Write(changes(services, tools.redeploy)))
 	mcpsdk.AddTool(server, newTool("deploy_image", "Deploy an image",
-		"Deploys an image built elsewhere, such as in CI, as the app's main service. It reuses the compose file of the running release and pulls with the registry login for the image's host. Returns the new deploy; follow it with get_deploy. Needs a token with read and write access.",
+		"Deploys an image built elsewhere, such as in CI, as the app's main service. It reuses the compose file of the live deploy and pulls with the registry login for the image's host. Returns the new deploy; follow it with get_deploy. Needs a token with read and write access.",
 		change(false, false)), Write(changes(services, tools.deployImage)))
 	mcpsdk.AddTool(server, newTool("create_deploy_hook", "Create a deploy hook",
 		"Gives an app a new secret deploy hook URL for CI and returns it once; the old URL stops working. CI calls POST <url> with {\"image\": \"...\"}. Needs a token with read and write access.",
@@ -68,7 +68,7 @@ func (d Deploy) Summary() string {
 	}
 	summary := fmt.Sprintf("Deploy v%d %s.", d.Number, status)
 	if d.FromNumber > 0 {
-		summary += fmt.Sprintf(" It starts the release of v%d again.", d.FromNumber)
+		summary += fmt.Sprintf(" It starts v%d again.", d.FromNumber)
 	}
 	if d.Error != "" {
 		summary += " Error: " + d.Error

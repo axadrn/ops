@@ -68,7 +68,7 @@ func (a *apps) runExec(ctx context.Context, start protocol.ExecStart, output fun
 	}
 	current := a.current(start.App)
 	if current == 0 {
-		return protocol.ExecDone{}, fmt.Errorf("%s has no running release: deploy it first", start.App)
+		return protocol.ExecDone{}, fmt.Errorf("%s has no live deploy: deploy it first", start.App)
 	}
 	composeFile := filepath.Join(a.releaseDir(start.App, current), "compose.json")
 	ctx, cancel := context.WithTimeout(ctx, execTimeout(start.Timeout))

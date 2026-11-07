@@ -498,7 +498,7 @@ func deployRowAttributes(number int, current bool) templ.Attributes {
 	return attributes
 }
 
-// canRollBack is whether a deploy can be released again: it succeeded, is not
+// canRollBack is whether a deploy can run again: it succeeded, is not
 // live, and nothing deploys right now.
 func canRollBack(app model.App, deploy api.Deploy) bool {
 	onServer := deploy.OnServer == nil || *deploy.OnServer

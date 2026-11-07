@@ -134,7 +134,7 @@ func TestOverviewSmallStaysReadable(t *testing.T) {
 
 func TestAppTabsShowTheirData(t *testing.T) {
 	cases := map[tab][]string{
-		tDeploys: {"v43", "live", "Checkout shows the shipping cost", "v42", "failed", "Release", "4f9ac21"},
+		tDeploys: {"v43", "live", "Checkout shows the shipping cost", "v42", "failed", "Deploy", "4f9ac21"},
 		tLogs:    {"GET / 200 3ms", "ERROR db timeout", "live", "4 lines"},
 		tBackups: {"shop.db", "passed", "postgres", "The daily check could not", "Go back to", "1 hour ago", "Before v43", "c downloads one"},
 		tEnv:     {"DATABASE_URL", "STRIPE_KEY", "••••••••", "values hidden"},

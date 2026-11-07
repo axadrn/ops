@@ -69,11 +69,11 @@ Deploys
   deploy --image     Deploy a CI image with the compose file of an earlier deploy: deploy --image <image> [app]
   deploy --ref       Deploy a branch, tag or commit from GitHub: deploy --ref main
   redeploy           Build the newest source or pull the image again, with the current env
-  restart            Start the live release again with the current env and domains: restart [app]
+  restart            Start the live deploy again with the current env and domains: restart [app]
   stop               Take the app offline; its data stays: stop [app] [--yes]
   start              Run a stopped app again: start [app]
   deploys            Deploy history: deploys [app]; one deploy with its log: deploys [app] v3
-  rollback           Start an earlier release again: rollback [app] [v<number>] [--yes]
+  rollback           Start an earlier deploy again: rollback [app] [v<number>] [--yes]
   logs               Show the last lines of the app: logs [--tail 200] [app]
   exec               Run a command in a container, no shell: exec [app] [--service web] -- rails db:migrate
 

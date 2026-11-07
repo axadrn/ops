@@ -101,7 +101,7 @@ func cleanDomains(domains []string) ([]string, error) {
 	return clean, nil
 }
 
-// mainService is the service that gets the traffic in the live release, ""
+// mainService is the service that gets the traffic in the live deploy, ""
 // before the first deploy.
 func (s *AppService) mainService(app *model.App) string {
 	if app.LiveNumber == 0 {

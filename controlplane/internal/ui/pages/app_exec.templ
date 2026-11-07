@@ -7,7 +7,7 @@ import (
 	"github.com/axadrn/moin/controlplane/internal/ui/kit"
 )
 
-// execServices are the services of the live release a command can run in:
+// execServices are the services of the live deploy a command can run in:
 // the main one first, then the databases.
 func execServices(app model.App, deploys []api.Deploy) []string {
 	for _, deploy := range deploys {

@@ -35,7 +35,7 @@ type App struct {
 	InstantProvider string `json:"instant_provider"`
 	InstantOpen     bool   `json:"instant_open"`
 	Stopped         bool   `json:"stopped"`
-	// ChangesWaiting counts the changes saved since the live release
+	// ChangesWaiting counts the changes saved since the live deploy
 	// started; a restart applies them. Only App fills it.
 	ChangesWaiting int `json:"changes_waiting"`
 	// Repo and Branch are the GitHub repo the app follows, if any.
@@ -54,7 +54,7 @@ type App struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Deploy is one release of an app.
+// Deploy is one version of an app, v12.
 type Deploy struct {
 	Number     int    `json:"number"`
 	Status     string `json:"status"`
@@ -415,7 +415,7 @@ func (c *Client) RemoveProtection(ctx context.Context, app string) (Change, erro
 	return response, err
 }
 
-// Restart starts the live release again with the env and domains as they
+// Restart starts the live deploy again with the env and domains as they
 // are now.
 func (c *Client) Restart(ctx context.Context, app string) (Deploy, error) {
 	var response Deploy

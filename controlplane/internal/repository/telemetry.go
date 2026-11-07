@@ -36,7 +36,7 @@ func (r *Telemetry) InstanceID() (string, error) {
 }
 
 // Counts counts what this control plane runs: registered servers, apps
-// with a live release and every deploy.
+// with a live deploy and every deploy.
 func (r *Telemetry) Counts() (model.Counts, error) {
 	var counts model.Counts
 	err := r.db.Get(&counts, `

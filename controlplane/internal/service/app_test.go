@@ -270,7 +270,7 @@ func TestDeployRollbackAndEnv(t *testing.T) {
 		}
 		agentSays(t, servers, server.ID, protocol.TypeDeployDone, protocol.DeployDone{DeployID: deploy.ID, OK: true})
 	}
-	if _, err := apps.Rollback(owner, "blog", 1); !errors.Is(err, ErrReleaseGone) {
+	if _, err := apps.Rollback(owner, "blog", 1); !errors.Is(err, ErrDeployGone) {
 		t.Fatalf("rollback out of the window: err = %v", err)
 	}
 	if _, err := apps.Rollback(owner, "blog", third.Number); err != nil {
@@ -486,7 +486,7 @@ func TestDomainsAndProtectionWaitForARestart(t *testing.T) {
 		t.Fatalf("changes waiting after the deploy = %d", n)
 	}
 
-	// With a live release, saving restarts nothing: the changes wait.
+	// With a live deploy, saving restarts nothing: the changes wait.
 	if _, err := apps.SetProtection(owner, "blog", "me", "short"); !errors.Is(err, ErrProtect) {
 		t.Fatalf("short password: err = %v", err)
 	}
@@ -659,7 +659,7 @@ func TestStopStartAndRestart(t *testing.T) {
 		t.Fatalf("set domains of a stopped app: %v", err)
 	}
 
-	// Start runs the live release with the settings as they are now.
+	// Start runs the live deploy with the settings as they are now.
 	started, err := apps.Start(owner, "blog")
 	if err != nil {
 		t.Fatal(err)

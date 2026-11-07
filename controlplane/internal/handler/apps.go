@@ -189,7 +189,7 @@ func (h *AppsHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Detail(w, r)
-	answerDone(w, r, "Rollback started", fmt.Sprintf("v%d releases v%d again.", deploy.Number, number))
+	answerDone(w, r, "Rollback started", fmt.Sprintf("v%d starts v%d again.", deploy.Number, number))
 }
 
 // Redeploy builds the newest source again. The page follows the new deploy.

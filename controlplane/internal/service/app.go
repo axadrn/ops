@@ -37,7 +37,7 @@ var (
 	ErrAppName        = errors.New("app name must be 1 to 63 lowercase letters, digits or dashes, starting with a letter or digit")
 	ErrDeployRunning  = errors.New("a deploy of this app is still running")
 	ErrNoRollback     = errors.New("there is no earlier successful deploy to roll back to")
-	ErrReleaseGone    = errors.New("that deploy is no longer on the server")
+	ErrDeployGone     = errors.New("that deploy is no longer on the server")
 	ErrNoSource       = errors.New("no deploy has a source yet")
 	ErrNotLive        = errors.New("the app has no live deploy yet")
 	ErrRunning        = errors.New("the app is already running")
@@ -202,7 +202,7 @@ func (s *AppService) Deploys(workspaceID, idOrName string, limit int) (*model.Ap
 }
 
 // Deploy deploys an image built elsewhere, such as in CI, as the main
-// service; the server keeps the compose file of the running release.
+// service; the server keeps the compose file of the live deploy.
 func (s *AppService) Deploy(actor Actor, idOrName, image string) (*model.Deploy, error) {
 	if !imagePattern.MatchString(image) {
 		return nil, ErrImage
@@ -384,7 +384,7 @@ func (s *AppService) Redeploy(actor Actor, idOrName string) (*model.Deploy, erro
 			Image:        previous.Image,
 			CreatedAt:    s.now().UTC(),
 		}
-		// The server builds the source it kept of that release again.
+		// The server builds the source it kept of that deploy again.
 		start := protocol.DeployStart{Image: deploy.Image}
 		if deploy.SourceKey != "" {
 			start.SourceNumber = previous.Number
@@ -394,7 +394,7 @@ func (s *AppService) Redeploy(actor Actor, idOrName string) (*model.Deploy, erro
 	return nil, ErrNoSource
 }
 
-// Restart starts the live release again with the env and domains as they
+// Restart starts the live deploy again with the env and domains as they
 // are now, without a build.
 func (s *AppService) Restart(actor Actor, idOrName string) (*model.Deploy, error) {
 	return s.apply(actor, "app.restarted", idOrName)
@@ -552,7 +552,7 @@ func (s *AppService) SetProtection(actor Actor, idOrName, username, password str
 // start or deploy: saving never restarts it (DESIGN.md, Feedback).
 var waitingActions = []string{"env.set", "env.removed", "app.domains_set", "app.protected", "app.unprotected", "app.instant_set", "app.bucket_set"}
 
-// ChangesWaiting counts the changes made to an app since its live release
+// ChangesWaiting counts the changes made to an app since its live deploy
 // started, which its next restart applies. A stopped app or one never
 // deployed has none waiting: it takes them when it starts.
 func (s *AppService) ChangesWaiting(workspaceID string, app *model.App) (int, error) {
@@ -591,7 +591,7 @@ type DomainCheck struct {
 	Service string
 }
 
-// liveDetected is what the agent found in the live release, nil before the
+// liveDetected is what the agent found in the live deploy, nil before the
 // first deploy.
 func (s *AppService) liveDetected(app *model.App) *protocol.Detected {
 	if app.LiveNumber == 0 {
@@ -605,7 +605,7 @@ func (s *AppService) liveDetected(app *model.App) *protocol.Detected {
 }
 
 // composeDomains are the domains x-moin.domains sets for the main service in
-// the live release, and its canonical one; none when compose.yml sets none
+// the live deploy, and its canonical one; none when compose.yml sets none
 // for it.
 func (s *AppService) composeDomains(app *model.App) (domains []string, canonical string) {
 	detected := s.liveDetected(app)
@@ -616,7 +616,7 @@ func (s *AppService) composeDomains(app *model.App) (domains []string, canonical
 }
 
 // composeServiceDomains are the domains x-moin.domains sets for the other
-// services in the live release, by service.
+// services in the live deploy, by service.
 func (s *AppService) composeServiceDomains(app *model.App) map[string][]string {
 	detected := s.liveDetected(app)
 	if detected == nil || detected.Config == nil {
@@ -764,7 +764,7 @@ func (s *AppService) domainChecks(ctx context.Context, workspaceID, idOrName str
 	return checks, nil
 }
 
-// Rollback starts the release of an earlier successful deploy again, with
+// Rollback starts the images of an earlier successful deploy again, with
 // the env it had. Number 0 means the one before the live deploy.
 func (s *AppService) Rollback(actor Actor, idOrName string, number int) (*model.Deploy, error) {
 	app, err := s.ready(actor.WorkspaceID, idOrName)
@@ -799,7 +799,7 @@ func (s *AppService) Rollback(actor Actor, idOrName string, number int) (*model.
 		return nil, err
 	}
 	if !KeptDeploys(deploys, app.LiveNumber)[target.Number] {
-		return nil, ErrReleaseGone
+		return nil, ErrDeployGone
 	}
 	deploy := &model.Deploy{
 		ID:         uuid.New().String(),

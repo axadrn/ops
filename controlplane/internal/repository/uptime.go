@@ -10,7 +10,7 @@ import (
 // checker keeps the newest results in memory and writes here only when
 // something changes, and its counts in batches.
 
-// UptimeTargets are the apps with a live release that are not stopped.
+// UptimeTargets are the apps with a live deploy that are not stopped.
 func (r *Apps) UptimeTargets() ([]model.UptimeTarget, error) {
 	targets := []model.UptimeTarget{}
 	err := r.db.Select(&targets, `

@@ -1469,7 +1469,7 @@ paths:
       tags: [Apps]
       operationId: createDeploy
       summary: Deploy
-      description: 'Starts a deploy. `{"upload": "...", "sha256": "..."}` deploys a source the CLI put into your bucket through createUpload; the server downloads it, checks the SHA-256 and deletes it from the bucket. `{"image": "..."}` deploys an image built elsewhere with the compose file of the running release. `{"ref": "main"}` has the server download that branch, tag or commit of the linked GitHub repo; `{}` deploys the linked branch. moin never stores your code. Follow the deploy with its events.'
+      description: 'Starts a deploy. `{"upload": "...", "sha256": "..."}` deploys a source the CLI put into your bucket through createUpload; the server downloads it, checks the SHA-256 and deletes it from the bucket. `{"image": "..."}` deploys an image built elsewhere with the compose file of the live deploy. `{"ref": "main"}` has the server download that branch, tag or commit of the linked GitHub repo; `{}` deploys the linked branch. moin never stores your code. Follow the deploy with its events.'
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -1623,7 +1623,7 @@ paths:
       tags: [Apps]
       operationId: rollbackApp
       summary: Roll back
-      description: Starts the images of an earlier successful deploy again, with the env it had. Number 0 or none means the one before the live deploy. The server keeps the last 5 releases.
+      description: Starts the images of an earlier successful deploy again, with the env it had. Number 0 or none means the one before the live deploy. The server keeps the last 5 deploys.
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -1652,7 +1652,7 @@ paths:
           description: '`not_found`. No app with this ID or name belongs to the account.'
         '409':
           $ref: '#/components/responses/Conflict'
-          description: '`server_offline`, `deploy_running`, `no_rollback` or `release_gone` when the server no longer keeps that release.'
+          description: '`server_offline`, `deploy_running`, `no_rollback` or `deploy_gone` when the server no longer keeps that deploy.'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
         '500':
@@ -1742,7 +1742,7 @@ paths:
       tags: [Apps]
       operationId: rotateDeployHook
       summary: Create a deploy hook
-      description: 'Gives the app a new secret deploy hook URL and answers it once; the old URL stops working. CI calls `POST <url>` with `{"image": "ghcr.io/me/app:tag"}` or `?image=` after pushing an image. The hook reuses the compose file of the running release.'
+      description: 'Gives the app a new secret deploy hook URL and answers it once; the old URL stops working. CI calls `POST <url>` with `{"image": "ghcr.io/me/app:tag"}` or `?image=` after pushing an image. The hook reuses the compose file of the live deploy.'
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -2289,7 +2289,7 @@ paths:
           description: '`not_found`. No app with this ID or name belongs to the account.'
         '409':
           $ref: '#/components/responses/Conflict'
-          description: '`server_offline`, or `not_live` when no service is named and the app has no release.'
+          description: '`server_offline`, or `not_live` when no service is named and the app has no live deploy.'
         '422':
           $ref: '#/components/responses/ValidationFailed'
           description: '`validation_failed` with `fields.command` or `fields.line`.'
@@ -3572,7 +3572,7 @@ paths:
       tags: [Apps]
       operationId: updateAppEnv
       summary: Set env vars
-      description: Sets and removes env vars. They are stored encrypted and take effect with the next deploy. A rollback keeps the env of its release.
+      description: Sets and removes env vars. They are stored encrypted and take effect with the next deploy. A rollback keeps the env of its deploy.
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -5256,7 +5256,7 @@ components:
           enum: [running, succeeded, failed]
         from_number:
           type: integer
-          description: For a rollback, the deploy whose release runs again. 0 otherwise.
+          description: For a rollback, the deploy that runs again. 0 otherwise.
         image:
           type: string
           description: The image of the main service when it was built elsewhere. Empty for server builds.

@@ -32,7 +32,7 @@ type Rows struct {
 	Limit  int
 }
 
-// Databases returns the databases of the app's live release, as the
+// Databases returns the databases of the app's live deploy, as the
 // agent found them.
 func (s *AppService) Databases(workspaceID, idOrName string) (*model.App, []protocol.Database, error) {
 	app, err := s.apps.ByIDOrNameForWorkspace(idOrName, workspaceID)

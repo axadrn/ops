@@ -155,7 +155,7 @@ func printApp(stdout io.Writer, detail client.AppDetail, now time.Time) {
 				built = "Railpack: " + deploy.Detected.Builder
 			}
 		}
-		// The live release says what it answers on; x-moin wins there.
+		// The live deploy says what it answers on; x-moin wins there.
 		if deploy.Number == app.LiveNumber && deploy.Detected != nil && deploy.Detected.Config != nil && len(deploy.Detected.Config.Domains) > 0 {
 			domains, canonical, fromCompose = deploy.Detected.Domains, deploy.Detected.Canonical, true
 		}
@@ -264,7 +264,7 @@ func deploy(ctx context.Context, args []string, stdout io.Writer) error {
 		return follow(ctx, api, name, started, "Deploy", *detach, stdout)
 	}
 	if *image != "" {
-		// The server keeps the compose file of the running release and pulls
+		// The server keeps the compose file of the live deploy and pulls
 		// the image; nothing is uploaded.
 		step(stdout, "Deploying %s", *image)
 		started, err := api.DeployImage(ctx, name, *image)

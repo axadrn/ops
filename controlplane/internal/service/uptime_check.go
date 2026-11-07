@@ -267,7 +267,7 @@ func (s *AppService) storePlannedChecks(gone, reset []model.UptimeCheck, now tim
 }
 
 // uptimeDomains are the domains of an app and its health path, if its
-// live release has one: the domains the release answers on win over the
+// live deploy has one: the domains the release answers on win over the
 // ones set in moin, like for the tunnel.
 func uptimeDomains(domainsJSON, detectedJSON string) (domains []string, health string) {
 	_ = json.Unmarshal([]byte(domainsJSON), &domains)

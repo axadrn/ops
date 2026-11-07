@@ -49,7 +49,7 @@ type App struct {
 	// Stopped is set when the app was stopped; a deploy, restart or start
 	// runs it again.
 	Stopped bool `json:"stopped"`
-	// ChangesWaiting counts the changes saved since the live release
+	// ChangesWaiting counts the changes saved since the live deploy
 	// started (env vars, domains, password, instant address, bucket); a
 	// restart applies them. Only GET /apps/{app} fills it.
 	ChangesWaiting int `json:"changes_waiting"`
@@ -208,7 +208,7 @@ func NewDeploy(deploy model.Deploy) Deploy {
 	}
 }
 
-// NewDeploys converts the newest deploys of an app with live release live,
+// NewDeploys converts the newest deploys of an app with live deploy live,
 // newest first, and says which ones the server still keeps.
 func NewDeploys(deploys []model.Deploy, live int) []Deploy {
 	kept := service.KeptDeploys(deploys, live)
@@ -677,7 +677,7 @@ func (h *AppsHandler) DeleteRegistry(w http.ResponseWriter, r *http.Request) {
 }
 
 // Change is the answer to a change of the domains: the app, and the deploy that
-// applies it to the running release, or null when the next deploy will.
+// applies it to the live deploy, or null when the next deploy will.
 // Unchanged is set when the app had it so already; nothing restarts.
 type Change struct {
 	App       App     `json:"app"`
@@ -773,7 +773,7 @@ func (h *AppsHandler) Domains(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, NewDomainChecks(checks))
 }
 
-// SetDomains replaces the domains and applies them to the running release.
+// SetDomains replaces the domains and applies them to the live deploy.
 func (h *AppsHandler) SetDomains(w http.ResponseWriter, r *http.Request) {
 	workspace := ctxkeys.Workspace(r.Context())
 	var request domainsRequest
@@ -847,7 +847,7 @@ func (h *AppsHandler) DeleteProtection(w http.ResponseWriter, r *http.Request) {
 	h.change(w, workspace.ID, r.PathValue("app"), nil, changed)
 }
 
-// Restart starts the live release again with the env and domains as they
+// Restart starts the live deploy again with the env and domains as they
 // are now.
 func (h *AppsHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	deploy, err := h.apps.Restart(actor(r), r.PathValue("app"))

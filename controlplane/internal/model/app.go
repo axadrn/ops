@@ -41,7 +41,7 @@ type App struct {
 	// Stopped is set when its owner stopped the app. A deploy, a restart
 	// or a start clears it.
 	Stopped bool `db:"stopped"`
-	// ChangesWaiting counts the changes since the live release started,
+	// ChangesWaiting counts the changes since the live deploy started,
 	// which the next restart applies (AppService.ChangesWaiting). Only
 	// AppService.Deploys fills it.
 	ChangesWaiting int `db:"-"`
@@ -69,7 +69,7 @@ const (
 	DeployFailed    = "failed"
 )
 
-// Deploy is one release of an app.
+// Deploy is one version of an app, v12.
 type Deploy struct {
 	ID           string `db:"id"`
 	AppID        string `db:"app_id"`
