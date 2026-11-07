@@ -17,12 +17,8 @@ import (
 	"github.com/axadrn/moin/internal/style"
 )
 
-// backups lists the backups of an app with the moments to go back to, or
-// manages the bucket.
+// backups lists the backups of an app with the moments to go back to.
 func backups(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
-	if len(args) > 0 && args[0] == "bucket" {
-		return bucket(ctx, args[1:], stdin, stdout)
-	}
 	flags := newFlags("backups", "backups [app]").withApp()
 	if err := flags.parse(args); err != nil {
 		return err
@@ -185,97 +181,6 @@ func parseTime(text string, now time.Time) (time.Time, error) {
 		return parsed.UTC(), nil
 	}
 	return time.Time{}, errors.New("not a time")
-}
-
-// bucket shows, sets or removes the bucket backups go to. It is the same
-// for every app of the workspace.
-func bucket(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
-	command := "show"
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		command, args = args[0], args[1:]
-	}
-	usage := map[string]string{
-		"set": "backups bucket set --endpoint https://… --bucket <bucket> --access-key <key> [--region auto] [--path <folder>], then the secret key on stdin",
-		"rm":  "backups bucket rm [--yes]",
-	}[command]
-	if usage == "" {
-		usage = "backups bucket"
-	}
-	flags := newFlags("backups bucket "+command, usage)
-	// Only set takes the bucket's flags, only rm --yes.
-	var endpoint, region, name, folder, accessKey *string
-	switch command {
-	case "set":
-		endpoint = flags.String("endpoint", "", "https:// URL of an S3-compatible store; empty for AWS S3")
-		region = flags.String("region", "", "region; auto for Cloudflare R2")
-		name = flags.String("bucket", "", "bucket name")
-		folder = flags.String("path", "", "a folder inside the bucket, only if it holds other files too")
-		accessKey = flags.String("access-key", "", "access key ID")
-	case "rm":
-		flags.withYes()
-	}
-	if err := flags.parse(args); err != nil {
-		return err
-	}
-	if flags.NArg() > 0 {
-		return flags.wrong()
-	}
-	api, err := apiClient()
-	if err != nil {
-		return err
-	}
-	switch command {
-	case "show", "ls":
-		storage, err := api.BackupStorage(ctx)
-		if err != nil {
-			return err
-		}
-		endpoint := storage.Endpoint
-		if endpoint == "" {
-			endpoint = "AWS S3"
-		}
-		table(stdout, []string{"BUCKET", "FOLDER", "ENDPOINT", "REGION", "ACCESS KEY"}, [][]string{{storage.Bucket, storage.Folder, endpoint, storage.Region, storage.AccessKey}})
-		return nil
-	case "set":
-		if *name == "" || *accessKey == "" {
-			return fmt.Errorf("give --bucket and --access-key; the secret key comes on stdin: %s backups bucket set --endpoint https://… --bucket <your-bucket> --access-key …", build.Name)
-		}
-		if isTerminal(stdin) {
-			fmt.Fprint(stdout, "Secret key: ")
-		}
-		secret, err := readSecret(stdin)
-		if isTerminal(stdin) {
-			fmt.Fprintln(stdout)
-		}
-		if err != nil {
-			return err
-		}
-		if secret == "" {
-			return errors.New("the secret key is empty")
-		}
-		_, err = api.SetBackupStorage(ctx, client.BackupStorage{Endpoint: *endpoint, Region: *region, Bucket: *name, Path: *folder, AccessKey: *accessKey, SecretKey: secret})
-		if err != nil {
-			return err
-		}
-		done(stdout, "Backups go to %s now, for every app.", *name)
-		return nil
-	case "rm":
-		storage, err := api.BackupStorage(ctx)
-		if err != nil {
-			return err
-		}
-		err = confirmName(stdin, stdout, flags.yes(), "Stop backups of every app? What is in the bucket stays.", storage.Bucket)
-		if err != nil {
-			return err
-		}
-		err = api.RemoveBackupStorage(ctx)
-		if err != nil {
-			return err
-		}
-		done(stdout, "Backups stopped. What is in the bucket stays.")
-		return nil
-	}
-	return fmt.Errorf("unknown command %q: use %s backups bucket, bucket set or bucket rm", command, build.Name)
 }
 
 func printBackups(w io.Writer, app string, list client.AppBackups, now time.Time) {

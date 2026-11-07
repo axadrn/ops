@@ -163,13 +163,12 @@ func TestDestructiveCommandsAsk(t *testing.T) {
 		{"domains", "rm", "--app", "shop", "blog.de"},
 		{"unlink", "shop"},
 		{"hook", "shop"},
-		{"backups", "bucket", "rm"},
 		{"buckets", "rm", "client-a"},
 		{"registry", "rm", "ghcr.io"},
 		{"integrations", "rm", "tailscale"},
 		{"sql", "--app", "shop", "--write", "DROP TABLE orders"},
 	} {
-		api := &fakeAPI{answers: map[string]string{"GET /api/v1/apps/shop": `{"app":{"name":"shop","domains":["blog.de"],"hook":true,"repo":"me/shop"}}`, "GET /api/v1/apps/shop/env": `{"items":{"KEY":"x"}}`, "GET /api/v1/backup-storage": `{"bucket":"moin-backups"}`, "GET /api/v1/integrations": `{"tailscale":true}`}}
+		api := &fakeAPI{answers: map[string]string{"GET /api/v1/apps/shop": `{"app":{"name":"shop","domains":["blog.de"],"hook":true,"repo":"me/shop"}}`, "GET /api/v1/apps/shop/env": `{"items":{"KEY":"x"}}`, "GET /api/v1/integrations": `{"tailscale":true}`}}
 		code, _, stderr := runCLI(t, api, args...)
 		if code != 1 || !strings.Contains(stderr, "--yes") {
 			t.Errorf("%v: code %d, stderr %q", args, code, stderr)
@@ -279,13 +278,13 @@ func TestHelpRunsNothing(t *testing.T) {
 }
 
 func TestHelpListsOnlyItsFlags(t *testing.T) {
-	code, stdout, _ := runCLI(t, &fakeAPI{}, "backups", "bucket", "rm", "--help")
+	code, stdout, _ := runCLI(t, &fakeAPI{}, "buckets", "rm", "--help")
 	if code != 0 || !strings.Contains(stdout, "--yes") || strings.Contains(stdout, "--endpoint") || strings.Contains(stdout, "--app") {
-		t.Errorf("bucket rm help: code %d, stdout %q", code, stdout)
+		t.Errorf("buckets rm help: code %d, stdout %q", code, stdout)
 	}
-	code, stdout, _ = runCLI(t, &fakeAPI{}, "backups", "bucket", "set", "--help")
+	code, stdout, _ = runCLI(t, &fakeAPI{}, "buckets", "add", "--help")
 	if code != 0 || !strings.Contains(stdout, "--access-key") || strings.Contains(stdout, "--yes") {
-		t.Errorf("bucket set help: code %d, stdout %q", code, stdout)
+		t.Errorf("buckets add help: code %d, stdout %q", code, stdout)
 	}
 }
 

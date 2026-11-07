@@ -2825,85 +2825,6 @@ paths:
         '500':
           $ref: '#/components/responses/Internal'
 
-  /api/v1/backup-storage:
-    get:
-      tags: [Backups]
-      operationId: getBackupStorage
-      summary: Get the default bucket
-      description: The workspace's default bucket, without its secret key. The single-bucket form of listBuckets, for older clients.
-      security:
-        - bearerAuth: []
-        - cookieAuth: []
-        - apiTokenAuth: [read]
-      responses:
-        '200':
-          description: The bucket.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BackupStorage'
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/OnboardedForbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-          description: '`no_backups` when no bucket is set up.'
-        '500':
-          $ref: '#/components/responses/Internal'
-    put:
-      tags: [Backups]
-      operationId: setBackupStorage
-      summary: Set the default bucket
-      description: Changes the workspace's default bucket, or adds the first one, named default. moin checks that it can write to the bucket first and stores the secret key encrypted. Empty endpoint means AWS S3; Cloudflare R2, Backblaze B2, Hetzner and other S3-compatible stores take their endpoint. Use addBucket and editBucket for more than one bucket.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BackupStorageRequest'
-      security:
-        - bearerAuth: []
-        - cookieAuth: []
-        - apiTokenAuth: [write]
-      responses:
-        '200':
-          description: The bucket.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BackupStorage'
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/OnboardedForbidden'
-        '422':
-          $ref: '#/components/responses/ValidationFailed'
-          description: '`validation_failed` with `fields.endpoint`, `fields.bucket` or `fields.secret_key`.'
-        '500':
-          $ref: '#/components/responses/Internal'
-    delete:
-      tags: [Backups]
-      operationId: deleteBackupStorage
-      summary: Remove the default bucket
-      description: Removes the workspace's default bucket, like deleteBucket. A bucket that apps use or that keeps older backups of an app is refused. What is in the bucket stays.
-      security:
-        - bearerAuth: []
-        - cookieAuth: []
-        - apiTokenAuth: [write]
-      responses:
-        '204':
-          description: The bucket is forgotten.
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/OnboardedForbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-          description: '`no_backups` when no bucket is set up, `bucket_in_use` when apps use it or it keeps older backups; the message names the apps.'
-        '500':
-          $ref: '#/components/responses/Internal'
-
   /api/v1/buckets:
     get:
       tags: [Backups]
@@ -5979,44 +5900,6 @@ components:
           type: boolean
         changes:
           type: integer
-    BackupStorage:
-      type: object
-      required: [endpoint, region, bucket, path, folder, access_key, created_at]
-      properties:
-        endpoint:
-          type: string
-        region:
-          type: string
-        bucket:
-          type: string
-        path:
-          type: string
-        folder:
-          type: string
-          description: Where this workspace's files are in the bucket, path then the workspace ID, like moin/0b6c1f8e-…/.
-        access_key:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-    BackupStorageRequest:
-      type: object
-      required: [bucket, access_key, secret_key]
-      properties:
-        endpoint:
-          type: string
-          description: https:// URL of an S3-compatible store; empty for AWS S3.
-        region:
-          type: string
-        bucket:
-          type: string
-        path:
-          type: string
-          description: An optional folder inside the bucket, only for a bucket that holds other files too.
-        access_key:
-          type: string
-        secret_key:
-          type: string
     Bucket:
       type: object
       required: [name, default, endpoint, region, bucket, path, folder, access_key, apps, older_backups, created_at]

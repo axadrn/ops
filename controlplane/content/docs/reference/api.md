@@ -173,7 +173,6 @@ Session-only endpoints keep a leaked token from making new tokens, changing role
 | `GET /api/v1/buckets` · `POST /api/v1/buckets` | read · write | the workspace's buckets, the default first, with the apps that use each; adds one |
 | `GET` · `PUT` · `DELETE /api/v1/buckets/{name}` | read · write | one bucket; changes it (an empty `secret_key` keeps the stored one, `default: true` makes it the default); removes it, `409` `bucket_in_use` while apps use it or left it |
 | `PUT /api/v1/apps/{app}/bucket` | write | the app's bucket, `{"bucket": "client-a"}`, or `""` for the default; the history starts again there |
-| `GET` · `PUT` · `DELETE /api/v1/backup-storage` | read · write | the default bucket, for older clients |
 
 ## Alerts
 

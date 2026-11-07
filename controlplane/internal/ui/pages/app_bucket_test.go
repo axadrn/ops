@@ -22,7 +22,7 @@ func TestBucketsPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := html.String()
-	for _, want := range []string{`data-backup-storage="default"`, `data-backup-storage="client-a"`, "data-default-bucket", `data-make-default="client-a"`, "/bucket/client-a/remove", ">shop</span>", "data-bucket-older", "Another bucket"} {
+	for _, want := range []string{`data-bucket="default"`, `data-bucket="client-a"`, "data-default-bucket", `data-make-default="client-a"`, "/bucket/client-a/remove", ">shop</span>", "data-bucket-older", "Another bucket"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the page has no %q", want)
 		}

@@ -127,18 +127,6 @@ func (c *Client) SetAppBucket(ctx context.Context, app, bucket string) (App, err
 	return answer, err
 }
 
-// BackupStorage is the account's bucket, without its secret key.
-type BackupStorage struct {
-	Endpoint  string    `json:"endpoint"`
-	Region    string    `json:"region"`
-	Bucket    string    `json:"bucket"`
-	Path      string    `json:"path"`
-	Folder    string    `json:"folder,omitempty"`
-	AccessKey string    `json:"access_key"`
-	SecretKey string    `json:"secret_key,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // Backups lists the backups of an app with the moments to go back to.
 func (c *Client) Backups(ctx context.Context, app string) (AppBackups, error) {
 	var backups AppBackups
@@ -172,34 +160,6 @@ func (c *Client) Download(ctx context.Context, app, id string) (Download, error)
 	var download Download
 	err := c.do(ctx, http.MethodGet, appPath(app, "backups/downloads/"+url.PathEscape(id)), nil, &download)
 	return download, err
-}
-
-// BackupStorage returns the account's bucket.
-func (c *Client) BackupStorage(ctx context.Context) (BackupStorage, error) {
-	var storage BackupStorage
-	err := c.do(ctx, http.MethodGet, "/api/v1/backup-storage", nil, &storage)
-	return storage, err
-}
-
-// SetBackupStorage checks and stores the account's bucket.
-func (c *Client) SetBackupStorage(ctx context.Context, storage BackupStorage) (BackupStorage, error) {
-	// The API takes no created_at, so the bucket goes without it.
-	body := struct {
-		Endpoint  string `json:"endpoint"`
-		Region    string `json:"region"`
-		Bucket    string `json:"bucket"`
-		Path      string `json:"path"`
-		AccessKey string `json:"access_key"`
-		SecretKey string `json:"secret_key"`
-	}{storage.Endpoint, storage.Region, storage.Bucket, storage.Path, storage.AccessKey, storage.SecretKey}
-	var stored BackupStorage
-	err := c.do(ctx, http.MethodPut, "/api/v1/backup-storage", body, &stored)
-	return stored, err
-}
-
-// RemoveBackupStorage stops backups; the bucket keeps what is in it.
-func (c *Client) RemoveBackupStorage(ctx context.Context) error {
-	return c.do(ctx, http.MethodDelete, "/api/v1/backup-storage", nil, nil)
 }
 
 // FetchCopy writes the copy a download link points to, in the user's own

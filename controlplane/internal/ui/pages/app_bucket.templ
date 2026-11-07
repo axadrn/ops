@@ -36,7 +36,7 @@ templ Bucket(view BucketView) {
 // changing it, making it the default and removing it.
 templ bucketPanel(bucket service.Bucket) {
 	{{ bucketPath := ctxkeys.AppBasePath(ctx) + "/bucket/" + bucket.Name }}
-	<div data-backup-storage={ bucket.Name }>
+	<div data-bucket={ bucket.Name }>
 		@kit.Section(bucket.Name, bucketBadge(bucket.Default)) {
 			@kit.List() {
 				@bucketFact("Used by", bucketUsedBy(bucket), false, nil)

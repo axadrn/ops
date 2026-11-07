@@ -17,9 +17,8 @@ import (
 )
 
 // TestBucketRoutes: buckets are added, listed and picked per app through
-// the API; the old single-bucket route shows the default; a bucket in use
-// answers 409 bucket_in_use naming the app. The workspace has no online
-// server, so no change waits for an agent.
+// the API; a bucket in use answers 409 bucket_in_use naming the app. The
+// workspace has no online server, so no change waits for an agent.
 func TestBucketRoutes(t *testing.T) {
 	database := testutil.NewDatabase(t)
 	testutil.SeedUser(t, database, testutil.UserOptions{ID: "owner"})
@@ -49,8 +48,6 @@ func TestBucketRoutes(t *testing.T) {
 		"PUT /api/v1/buckets/{name}":      handler.EditBucket,
 		"DELETE /api/v1/buckets/{name}":   handler.DeleteBucket,
 		"PUT /api/v1/apps/{app}/bucket":   handler.SetAppBucket,
-		"GET /api/v1/backup-storage":      handler.GetBackupStorage,
-		"DELETE /api/v1/backup-storage":   handler.DeleteBackupStorage,
 		"POST /api/v1/apps/{app}/restore": handler.Restore,
 	} {
 		mux.HandleFunc(pattern, serve)
@@ -72,7 +69,7 @@ func TestBucketRoutes(t *testing.T) {
 		return code
 	}
 
-	if status, answer := send("GET", "/api/v1/backup-storage", ""); status != http.StatusConflict || code(answer) != "no_backups" {
+	if status, answer := send("GET", "/api/v1/buckets", ""); status != http.StatusOK || len(answer["items"].([]any)) != 0 {
 		t.Fatalf("no bucket: %d %v", status, answer)
 	}
 	body := `{"name":"main","endpoint":"` + bucket.URL + `","bucket":"main","access_key":"k","secret_key":"s"}`
@@ -85,9 +82,6 @@ func TestBucketRoutes(t *testing.T) {
 	}
 	if status, answer := send("POST", "/api/v1/buckets", body); status != http.StatusUnprocessableEntity || code(answer) != "validation_failed" {
 		t.Fatalf("add client-a twice: %d %v", status, answer)
-	}
-	if status, answer := send("GET", "/api/v1/backup-storage", ""); status != http.StatusOK || answer["bucket"] != "main" {
-		t.Fatalf("the default through the old route: %d %v", status, answer)
 	}
 
 	if status, answer := send("PUT", "/api/v1/apps/blog/bucket", `{"bucket":"client-a"}`); status != http.StatusOK || answer["bucket"] != "client-a" {
@@ -111,7 +105,7 @@ func TestBucketRoutes(t *testing.T) {
 	if status != http.StatusConflict || code(answer) != "bucket_in_use" || !strings.Contains(answer["error"].(map[string]any)["message"].(string), "blog") {
 		t.Fatalf("remove client-a in use: %d %v", status, answer)
 	}
-	if status, answer := send("DELETE", "/api/v1/backup-storage", ""); status != http.StatusConflict || code(answer) != "bucket_in_use" {
+	if status, answer := send("DELETE", "/api/v1/buckets/main", ""); status != http.StatusConflict || code(answer) != "bucket_in_use" {
 		t.Fatalf("remove the default with older backups: %d %v", status, answer)
 	}
 	if status, answer := send("POST", "/api/v1/apps/blog/restore", `{"moment":""}`); status != http.StatusUnprocessableEntity || code(answer) != "validation_failed" {

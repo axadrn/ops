@@ -51,7 +51,7 @@ templ BackupSettings(view BackupsView) {
 				} else {
 					@kit.Row(ctxkeys.AppBasePath(ctx) + "/bucket") {
 						<span class="shrink-0 font-medium">Bucket</span>
-						<span class="min-w-0 flex-1 truncate text-right text-sm text-muted-foreground" data-backup-storage={ view.Storage.Name }>{ view.Storage.Name }</span>
+						<span class="min-w-0 flex-1 truncate text-right text-sm text-muted-foreground" data-bucket={ view.Storage.Name }>{ view.Storage.Name }</span>
 					}
 					@kit.RowFact("Folder", "") {
 						<span class="font-mono" data-bucket-folder>{ view.Storage.AppFolder(&view.App) }</span>

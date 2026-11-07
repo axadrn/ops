@@ -130,9 +130,6 @@ func TestBuckets(t *testing.T) {
 	if err := apps.RemoveBucket(owner, "default"); !errors.As(err, &inUse) || len(inUse.Apps) != 1 || inUse.Apps[0] != "shop" || len(inUse.Older) != 1 || inUse.Older[0] != "blog" {
 		t.Fatalf("remove default: err = %v", err)
 	}
-	if err := apps.RemoveBackupStorage(owner); !errors.As(err, &inUse) {
-		t.Fatalf("remove the default through the old API: err = %v", err)
-	}
 
 	// An unused bucket goes.
 	input.Name = "spare"
@@ -175,34 +172,23 @@ func TestBuckets(t *testing.T) {
 }
 
 // TestFirstBucketIsTheDefault: a workspace without a bucket gets its
-// first as the default, also through the single-bucket API.
+// first as the default, and the last bucket may go once no app uses it.
 func TestFirstBucketIsTheDefault(t *testing.T) {
 	apps, _, _, _ := newAppService(t)
 	ctx := context.Background()
 	endpoint := fakeBucket(t)
-	err := apps.SetBackupStorage(ctx, other, BackupStorageInput{Endpoint: endpoint, Bucket: "other", AccessKey: "key", SecretKey: "secret"})
-	if err != nil {
+	if _, err := apps.AddBucket(ctx, other, BucketInput{Name: "first", Endpoint: endpoint, Bucket: "other", AccessKey: "key", SecretKey: "secret"}); err != nil {
 		t.Fatal(err)
 	}
-	storage, err := apps.BackupStorage(other.WorkspaceID)
-	if err != nil || storage.Name != "default" || !storage.Default {
-		t.Fatalf("first bucket = %+v, %v", storage, err)
-	}
-	// The old API changes the default and still needs the secret key.
-	if err := apps.SetBackupStorage(ctx, other, BackupStorageInput{Endpoint: endpoint, Bucket: "other-2", AccessKey: "key"}); !errors.Is(err, ErrBackupBucket) {
-		t.Fatalf("old API without a secret key: err = %v", err)
-	}
-	if err := apps.SetBackupStorage(ctx, other, BackupStorageInput{Endpoint: endpoint, Bucket: "other-2", AccessKey: "key", SecretKey: "secret"}); err != nil {
-		t.Fatal(err)
-	}
-	if buckets, _ := apps.Buckets(other.WorkspaceID); len(buckets) != 1 || buckets[0].Bucket != "other-2" {
-		t.Fatalf("buckets after the old API = %+v", buckets)
+	bucket, err := apps.DefaultBucket(other.WorkspaceID)
+	if err != nil || bucket.Name != "first" || !bucket.Default {
+		t.Fatalf("first bucket = %+v, %v", bucket, err)
 	}
 	// Without apps the last bucket may go.
-	if err := apps.RemoveBackupStorage(other); err != nil {
+	if err := apps.RemoveBucket(other, "first"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apps.BackupStorage(other.WorkspaceID); !errors.Is(err, ErrNoBackups) {
+	if _, err := apps.DefaultBucket(other.WorkspaceID); !errors.Is(err, ErrNoBackups) {
 		t.Fatalf("after removing the last bucket: err = %v", err)
 	}
 }

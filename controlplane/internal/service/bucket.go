@@ -23,11 +23,6 @@ import (
 // ErrBucketName refuses a bucket name that is not a short slug.
 var ErrBucketName = errors.New("a bucket's name is 1 to 63 lowercase letters, digits or dashes")
 
-// defaultBucketName names a bucket that comes without a name: through the
-// old single-bucket API, and the bucket a workspace had before buckets
-// had names.
-const defaultBucketName = "default"
-
 // BucketInUseError refuses to remove a bucket that apps use or that keeps
 // older backups of an app.
 type BucketInUseError struct {
@@ -86,17 +81,6 @@ type BucketInput struct {
 	Default   bool
 }
 
-// BackupStorageInput is the default bucket as the single-bucket API takes
-// it.
-type BackupStorageInput struct {
-	Endpoint  string
-	Region    string
-	Bucket    string
-	Path      string
-	AccessKey string
-	SecretKey string
-}
-
 func newBucket(bucket model.Bucket) Bucket {
 	return Bucket{
 		ID:        bucket.ID,
@@ -150,8 +134,8 @@ func (s *AppService) Bucket(workspaceID, name string) (*Bucket, error) {
 	return &view, err
 }
 
-// BackupStorage returns the workspace's default bucket, or ErrNoBackups.
-func (s *AppService) BackupStorage(workspaceID string) (*Bucket, error) {
+// DefaultBucket returns the workspace's default bucket, or ErrNoBackups.
+func (s *AppService) DefaultBucket(workspaceID string) (*Bucket, error) {
 	bucket, err := s.apps.DefaultBucket(workspaceID)
 	if errors.Is(err, repository.ErrNoBackupStorage) {
 		return nil, ErrNoBackups
@@ -341,40 +325,6 @@ func (s *AppService) RemoveBucket(actor Actor, name string) error {
 	s.servers.record(actor, "bucket.removed", "bucket", bucket.Name, nil)
 	s.notify(actor.WorkspaceID)
 	return nil
-}
-
-// SetBackupStorage stores the default bucket for the single-bucket API:
-// it changes the default, or adds the first bucket.
-func (s *AppService) SetBackupStorage(ctx context.Context, actor Actor, input BackupStorageInput) error {
-	bucket := BucketInput{Endpoint: input.Endpoint, Region: input.Region, Bucket: input.Bucket, Path: input.Path, AccessKey: input.AccessKey, SecretKey: input.SecretKey}
-	stored, err := s.apps.DefaultBucket(actor.WorkspaceID)
-	if errors.Is(err, repository.ErrNoBackupStorage) {
-		bucket.Name = defaultBucketName
-		_, err = s.AddBucket(ctx, actor, bucket)
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	// The single-bucket API always sent the secret key.
-	if strings.TrimSpace(input.SecretKey) == "" {
-		return ErrBackupBucket
-	}
-	_, err = s.EditBucket(ctx, actor, stored.Name, bucket)
-	return err
-}
-
-// RemoveBackupStorage removes the default bucket for the single-bucket
-// API, with the same rules as RemoveBucket.
-func (s *AppService) RemoveBackupStorage(actor Actor) error {
-	stored, err := s.apps.DefaultBucket(actor.WorkspaceID)
-	if errors.Is(err, repository.ErrNoBackupStorage) {
-		return ErrNoBackups
-	}
-	if err != nil {
-		return err
-	}
-	return s.RemoveBucket(actor, stored.Name)
 }
 
 // SetAppBucket moves an app's uploads and new backups to a bucket of the

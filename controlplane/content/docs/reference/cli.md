@@ -185,7 +185,6 @@ Every command of `moin`, by area. `moin <command> --help` shows the same on your
 | `moin buckets default <name>` | makes a bucket the default for apps without one of their own |
 | `moin buckets rm <name> [--yes]` | removes a bucket from moin; refused while apps use it or apps left it. What is in it stays |
 | `moin buckets use <bucket> [app]` · `moin buckets use --default [app]` | moves an app's uploads and backups to a bucket, or back to the default; the history starts again there |
-| `moin backups bucket` · `moin backups bucket set …` · `moin backups bucket rm [--yes]` | the default bucket, as before there were several; `set` takes the flags of `buckets add` |
 
 | Flag | Takes |
 | --- | --- |
@@ -216,7 +215,7 @@ Flags may come before or after the arguments: `moin rollback v3 --app shop` is `
 
 | | Commands | Asks |
 | --- | --- | --- |
-| Big, cannot be undone | `servers rm`, `apps rm`, `buckets rm`, `backups bucket rm`, `restore` | type the name: `Type shop to confirm:` |
+| Big, cannot be undone | `servers rm`, `apps rm`, `buckets rm`, `restore` | type the name: `Type shop to confirm:` |
 | Small or reversible | `update`, `stop`, `rollback`, `env rm`, `domains rm`, `protect off`, `registry rm`, `integrations rm`, `alerts rm`, `unlink`, `hook`, `hook off`, `team revoke`, `servers secure`, `agent uninstall`, `env pull` over a file, `env push`, `sql --write` with DROP or DELETE | `[y/N]` |
 | Harmless | `deploy`, `redeploy`, `restart`, `start`, `backup download`, adding and setting things | nothing |
 

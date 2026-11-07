@@ -22,18 +22,18 @@ func TestPublicBucketsOnly(t *testing.T) {
 	}))
 	defer bucket.Close()
 	ctx := context.Background()
-	input := BackupStorageInput{Endpoint: bucket.URL, Bucket: "backups", AccessKey: "key", SecretKey: "secret"}
+	input := BucketInput{Name: "default", Endpoint: bucket.URL, Bucket: "backups", AccessKey: "key", SecretKey: "secret"}
 
 	// Self-hosted: a bucket next to the control plane works.
-	if err := apps.SetBackupStorage(ctx, other, input); err != nil {
+	if _, err := apps.AddBucket(ctx, other, input); err != nil {
 		t.Fatalf("self-hosted local bucket: %v", err)
 	}
 
 	apps.AllowOnlyPublicBuckets()
 	calls.Store(0)
 	for _, endpoint := range []string{bucket.URL, strings.Replace(bucket.URL, "127.0.0.1", "localhost", 1)} {
-		input.Endpoint = endpoint
-		err := apps.SetBackupStorage(ctx, other, input)
+		input.Name, input.Endpoint = "public", endpoint
+		_, err := apps.AddBucket(ctx, other, input)
 		if !errors.Is(err, ErrBucketPrivate) {
 			t.Fatalf("hosted %s: err = %v", endpoint, err)
 		}

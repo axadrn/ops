@@ -68,15 +68,15 @@ func TestPlainSurfaces(t *testing.T) {
 }
 
 func TestSurfacesLongCommand(t *testing.T) {
-	source := "```surfaces\nCLI: moin backups bucket set \\\n  --bucket b \\\n  --access-key k\nMCP: set_backup_storage\n```\n"
+	source := "```surfaces\nCLI: moin buckets add \\\n  --bucket b \\\n  --access-key k\nMCP: add_bucket\n```\n"
 	html, err := NewParser().Parse([]byte(source))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(html), "<code>moin backups bucket set \\\n  --bucket b \\\n  --access-key k</code>") {
+	if !strings.Contains(string(html), "<code>moin buckets add \\\n  --bucket b \\\n  --access-key k</code>") {
 		t.Errorf("got %s", html)
 	}
-	want := "- CLI:\n\n  ```\n  moin backups bucket set \\\n    --bucket b \\\n    --access-key k\n  ```\n- MCP: `set_backup_storage`\n"
+	want := "- CLI:\n\n  ```\n  moin buckets add \\\n    --bucket b \\\n    --access-key k\n  ```\n- MCP: `add_bucket`\n"
 	if got := string(PlainSurfaces([]byte(source))); got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
