@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -92,6 +93,51 @@ type walg struct {
 	states map[string]*walgState
 	// binary guards the download.
 	binary sync.Mutex
+}
+
+// breaksFile keeps when the history of each Postgres lost its place, so
+// the window after a restart of the agent does not reach across the gap.
+const breaksFile = "walg-breaks.json"
+
+// walgBreak is how the history of a database broke and started again.
+type walgBreak struct {
+	Broke   time.Time `json:"broke"`
+	Rebased time.Time `json:"rebased,omitzero"`
+	Why     string    `json:"why"`
+}
+
+// loadBreaks reads the breaks of the last 7 days into the states.
+func (b *backups) loadBreaks() {
+	breaks := map[string]walgBreak{}
+	_ = b.loadState(filepath.Join(b.stateDir(), breaksFile), &breaks)
+	for k, broke := range breaks {
+		if time.Since(broke.Broke) > keepHistory {
+			continue
+		}
+		state := b.walgState(k)
+		b.walg.mu.Lock()
+		state.broke, state.rebased, state.why = broke.Broke, broke.Rebased, broke.Why
+		b.walg.mu.Unlock()
+	}
+}
+
+// saveBreak writes down the break of one database, and forgets those
+// older than 7 days.
+func (b *backups) saveBreak(k string) {
+	state := b.walgState(k)
+	b.walg.mu.Lock()
+	broke := walgBreak{Broke: state.broke, Rebased: state.rebased, Why: state.why}
+	b.walg.mu.Unlock()
+	b.journal.Lock()
+	defer b.journal.Unlock()
+	file := filepath.Join(b.stateDir(), breaksFile)
+	breaks := map[string]walgBreak{}
+	_ = b.loadState(file, &breaks)
+	breaks[k] = broke
+	maps.DeleteFunc(breaks, func(_ string, broke walgBreak) bool { return time.Since(broke.Broke) > keepHistory })
+	if err := writeState(file, breaks); err != nil {
+		slog.Error("backup: write down the break of the history", "error", err)
+	}
 }
 
 func (b *backups) walgState(key string) *walgState {
@@ -192,6 +238,12 @@ type pgData struct {
 	mount       string // a docker -v source:destination
 	typ, source string
 	dest        string
+}
+
+// anonymous says the data is on a volume Docker made for the image, with
+// no name of its own.
+func (d pgData) anonymous() bool {
+	return d.typ == "volume" && len(d.source) == 64 && strings.Trim(d.source, "0123456789abcdef") == ""
 }
 
 // sub is where PGDATA is inside its mount, "" at its top.
@@ -442,6 +494,7 @@ func (b *backups) walgCheckSlot(ctx context.Context, app string, database protoc
 	b.walg.mu.Lock()
 	state.broke, state.rebased, state.based, state.why = time.Now().UTC(), time.Time{}, time.Time{}, walgWhyCap
 	b.walg.mu.Unlock()
+	b.saveBreak(key(app, database))
 	slog.Error("backup: WAL-G fell too far behind, Postgres dropped its slot; taking a new base backup", "app", app, "database", database.Path)
 	return true, nil
 }
@@ -464,10 +517,14 @@ func (b *backups) walgBase(ctx context.Context, app string, database protocol.Da
 	state := b.walgState(key(app, database))
 	b.walg.mu.Lock()
 	state.based = time.Now().UTC()
-	if !state.broke.IsZero() && state.rebased.IsZero() {
+	rebased := !state.broke.IsZero() && state.rebased.IsZero()
+	if rebased {
 		state.rebased = state.based
 	}
 	b.walg.mu.Unlock()
+	if rebased {
+		b.saveBreak(key(app, database))
+	}
 	// The base backup ends in an open WAL segment: close it, so the backup
 	// can be restored as soon as wal-receive uploads it.
 	if err := b.walgSwitch(ctx, app, database); err != nil {

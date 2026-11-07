@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -47,6 +48,14 @@ func (e *postgresEngine) Record(ctx context.Context) error {
 	if restoring {
 		return nil
 	}
+	defer b.lockBusy(key(app, database))()
+	b.mu.Lock()
+	restoring = b.restoring[key(app, database)]
+	b.mu.Unlock()
+	if restoring {
+		// A restore started meanwhile and waited for this one.
+		return nil
+	}
 	if err := b.settleSwitch(ctx, app, database); err != nil {
 		return err
 	}
@@ -59,6 +68,7 @@ func (e *postgresEngine) Record(ctx context.Context) error {
 		b.walg.mu.Lock()
 		state.broke, state.rebased, state.based, state.why = time.Now().UTC(), time.Time{}, time.Time{}, walgWhyLost
 		b.walg.mu.Unlock()
+		b.saveBreak(key(app, database))
 		if err := b.walgFresh(ctx, app, database); err != nil {
 			slog.Warn("backup: start WAL-G over", "app", app, "database", database.Path, "error", err)
 		}
@@ -96,7 +106,11 @@ func (e *postgresEngine) Record(ctx context.Context) error {
 func (e *postgresEngine) GoBack(ctx context.Context, to moment, run *restoreRun) error {
 	b, app, database := e.b, e.app, e.database
 	k := app + "/" + database.Service
-	if owed := b.pgVolumes()[k].Owed; owed != nil && (len(owed.Histories) > 0 || owed.Timeline != 0) {
+	state, err := b.pgVolume(k)
+	if err != nil {
+		return err
+	}
+	if owed := state.Owed; owed != nil && (len(owed.Histories) > 0 || owed.Timeline != 0) {
 		return errors.New("the timeline of the last restore is not in the bucket yet: moin tries again every minute; restore once the backup works again")
 	}
 	target, err := b.apps.postgres(ctx, app, database)
@@ -107,13 +121,13 @@ func (e *postgresEngine) GoBack(ctx context.Context, to moment, run *restoreRun)
 	if err != nil {
 		return err
 	}
-	state := b.pgVolumes()[k]
-	if state.Current.Source != data.source {
+	current := state.Current
+	if current.Source != data.source {
 		// The first restore of this database, or the app's own compose
 		// file moved the data since: it is where it runs now.
-		state.Current = pgMount{Type: data.typ, Source: data.source}
+		current = pgMount{Type: data.typ, Source: data.source}
 	}
-	state.Target, state.Sub = data.dest, data.sub()
+	sub := data.sub()
 	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return err
@@ -127,37 +141,42 @@ func (e *postgresEngine) GoBack(ctx context.Context, to moment, run *restoreRun)
 		return err
 	}
 	defer remove()
+	run.mark.Image = target.image
 
 	var next pgMount
 	var histories []string
 	timeline := 0
+	crashed := false
 	if to.Copy != "" {
-		index := slices.IndexFunc(state.Previous, func(previous pgPrevious) bool { return previous.ID == to.Copy })
+		index := slices.IndexFunc(state.Previous, func(previous pgPrevious) bool {
+			return previous.ID == to.Copy && time.Since(previous.Until) <= keepHistory
+		})
 		if index < 0 {
 			return fmt.Errorf("there is no state from before the restore %s of %s: it is older than 7 days, or of another database", to.Copy, database.Path)
 		}
 		next = state.Previous[index].pgMount
 		// Its timeline histories went to the bucket when it ran.
-		if timeline, _, err = e.timelineOf(ctx, next, state.Sub, target.image); err != nil {
+		if timeline, _, err = e.timelineOf(ctx, next, sub, target.image); err != nil {
 			return err
 		}
 	} else {
-		volume, cleanup, err := e.recoverMoment(ctx, to.At, target, data, binary, envFile)
+		volume, cleanup, err := e.recoverMoment(ctx, to.At, target, data, binary, envFile, run)
 		if err != nil {
 			return err
 		}
-		// Until the switch the restored volume is a throwaway.
+		// Until the switch the restored volume is this restore's alone; a
+		// killed agent leaves it to recoverRestores.
 		defer func() {
-			if cleanup != nil {
+			if cleanup != nil && !crashed {
 				cleanup()
 			}
 		}()
 		next = pgMount{Type: "volume", Source: volume}
-		if timeline, histories, err = e.timelineOf(ctx, next, state.Sub, target.image); err != nil {
+		if timeline, histories, err = e.timelineOf(ctx, next, sub, target.image); err != nil {
 			return err
 		}
 		defer func() {
-			if b.pgVolumes()[k].Current == next {
+			if state, err := b.pgVolume(k); err != nil || state.Current == next {
 				cleanup = nil
 			}
 		}()
@@ -174,6 +193,7 @@ func (e *postgresEngine) GoBack(ctx context.Context, to moment, run *restoreRun)
 		return err
 	}
 	if run.at("stopped") {
+		crashed = true
 		return errCrash
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), switchTimeout)
@@ -184,18 +204,30 @@ func (e *postgresEngine) GoBack(ctx context.Context, to moment, run *restoreRun)
 	if err := all.stop(); err != nil {
 		return err
 	}
+	// A volume a database ran on carries a mark, so nothing removes it as
+	// a leftover.
+	if next.Source == run.mark.Built {
+		if err := b.markSwitched(ctx, next.Source, target.image); err != nil {
+			return all.startAfter(fmt.Errorf("mark the restored volume: %w; nothing changed", err))
+		}
+	}
 
 	// The switch: from here on the database runs on next, and the volume
-	// before undoes this restore.
+	// before undoes this restore. Only this restore's fields change.
 	now := time.Now().UTC()
-	state.Previous = slices.DeleteFunc(state.Previous, func(previous pgPrevious) bool { return previous.Source == next.Source })
-	state.Previous = append(state.Previous, pgPrevious{pgMount: state.Current, ID: now.Format(protocol.CopyIDLayout), Until: now})
-	state.Current = next
-	state.Owed = &pgOwed{Histories: histories, Timeline: timeline, Since: now, Fresh: true}
-	if err := b.savePgVolume(k, state); err != nil {
+	err = b.changePgVolume(k, func(state *pgVolume) error {
+		state.Target, state.Sub, state.Anonymous = data.dest, sub, data.anonymous()
+		state.Previous = slices.DeleteFunc(state.Previous, func(previous pgPrevious) bool { return previous.Source == next.Source })
+		state.Previous = append(state.Previous, pgPrevious{pgMount: current, ID: now.Format(protocol.CopyIDLayout), Until: now})
+		state.Current = next
+		state.Owed = &pgOwed{Histories: histories, Timeline: timeline, Since: now, Fresh: true}
+		return nil
+	})
+	if err != nil {
 		return all.startAfter(fmt.Errorf("write the switch down: %w; nothing changed", err))
 	}
 	if run.at("switched") {
+		crashed = true
 		return errCrash
 	}
 	// Before Postgres writes a thing on the timeline, the bucket knows it;
@@ -203,11 +235,62 @@ func (e *postgresEngine) GoBack(ctx context.Context, to moment, run *restoreRun)
 	if err := b.payOwed(ctx, app, database, target.image, binary, envFile); err != nil {
 		slog.Error("backup: the timeline of the restore is not in the bucket yet; Record tries again", "app", app, "error", err)
 	}
-	startErr := all.startAfter(nil)
-	if startErr == nil {
-		b.recordAfterSwitch(ctx, app, database)
+	if err := all.startAfter(nil); err != nil {
+		return fmt.Errorf("the restored data is in place, but %w", err)
 	}
-	return startErr
+	b.recordAfterSwitch(ctx, app, database)
+	return nil
+}
+
+// switchedMark is the mark in a volume a database ran on since a restore.
+const switchedMark = ".moin-switched"
+
+// markSwitched puts the mark into a volume.
+func (b *backups) markSwitched(ctx context.Context, volume, image string) error {
+	out, err := b.apps.output(ctx, "docker", "run", "--rm", "-u", "root", "-v", volume+":/v", "--entrypoint", "sh", image, "-c", `date -u > "/v/$0"`, switchedMark)
+	if err != nil {
+		return fmt.Errorf("%v %s", err, out)
+	}
+	return nil
+}
+
+// removeBuilt removes a volume a restore built and never switched to. It
+// keeps it, to be safe, when it cannot tell: when the state file cannot be
+// read, a database runs or can switch back to it, a container uses it, or
+// it carries the mark of a volume a database ran on.
+func (b *backups) removeBuilt(ctx context.Context, volume, image string) {
+	if !strings.HasPrefix(volume, ourName+"-restore-") {
+		return
+	}
+	volumes, err := b.loadPgVolumes()
+	if err != nil {
+		slog.Error("backup: keep the restored volume; the state file cannot be read", "volume", volume, "error", err)
+		return
+	}
+	for _, state := range volumes {
+		if state.uses(volume) {
+			return
+		}
+	}
+	if b.volumeInUse(ctx, volume) || image == "" || b.volumeMarked(ctx, volume, image) {
+		slog.Warn("backup: keep a restored volume that may hold data", "volume", volume)
+		return
+	}
+	if out, err := b.apps.output(ctx, "docker", "volume", "rm", volume); err != nil {
+		slog.Warn("backup: remove the volume of a restore that did not switch", "volume", volume, "error", err, "output", out)
+	}
+}
+
+// volumeInUse says a container, running or not, uses a volume.
+func (b *backups) volumeInUse(ctx context.Context, volume string) bool {
+	out, err := b.apps.output(ctx, "docker", "ps", "-aq", "--filter", "volume="+volume)
+	return err != nil || strings.TrimSpace(out) != ""
+}
+
+// volumeMarked says a volume carries the mark, or that nobody can tell.
+func (b *backups) volumeMarked(ctx context.Context, volume, image string) bool {
+	out, err := b.apps.output(ctx, "docker", "run", "--rm", "-v", volume+":/v:ro", "--entrypoint", "sh", image, "-c", `if [ -e "/v/$0" ]; then echo marked; else echo clean; fi`, switchedMark)
+	return err != nil || strings.TrimSpace(out) != "clean"
 }
 
 // stopWriters stops the app's services but the database, so nothing writes
@@ -225,9 +308,10 @@ func (e *postgresEngine) stopWriters(ctx context.Context) (*appStop, error) {
 	return writers, nil
 }
 
-// enoughSpace says when the disk of the database has no room for the
-// restored data beside the live data, its size once more.
-func (e *postgresEngine) enoughSpace(ctx context.Context, target pgTarget, data pgData) error {
+// enoughSpace says when Docker's folder, where the new volume lies, has no
+// room for the restored data beside the live data, its size once more. It
+// measures inside the new volume.
+func (e *postgresEngine) enoughSpace(ctx context.Context, target pgTarget, volume string) error {
 	out, err := target.psql(ctx, `SELECT sum(pg_database_size(datname)) FROM pg_database;`, nil, false)
 	if err != nil {
 		return nil
@@ -236,7 +320,7 @@ func (e *postgresEngine) enoughSpace(ctx context.Context, target pgTarget, data 
 	if err != nil {
 		return nil
 	}
-	out, err = e.b.apps.output(ctx, "docker", "run", "--rm", "-v", data.mount, "--entrypoint", "stat", target.image, "-f", "-c", "%a %S", data.dir)
+	out, err = e.b.apps.output(ctx, "docker", "run", "--rm", "-v", volume+":/v", "--entrypoint", "stat", target.image, "-f", "-c", "%a %S", "/v")
 	var blocks, blockSize int64
 	if err != nil {
 		return nil
@@ -313,21 +397,12 @@ func (b *backups) removeThrowaways(ctx context.Context) {
 	for _, container := range strings.Fields(out) {
 		_, _ = b.apps.output(ctx, "docker", "rm", "-f", container)
 	}
-	// Restore volumes a database runs on, or a restore can switch back to,
-	// stay; the others are what a restore that stopped before its switch
-	// left.
-	kept := map[string]bool{}
-	for _, volume := range b.pgVolumes() {
-		kept[volume.Current.Source] = true
-		for _, previous := range volume.Previous {
-			kept[previous.Source] = true
-		}
-	}
-	out, _ = b.apps.output(ctx, "docker", "volume", "ls", "-q")
+	// Restore volumes are never removed for what a file does not say:
+	// recoverRestores removes the one a restore built and never switched
+	// to, sweepVolumes the undos after 7 days.
+	out, _ = b.apps.output(ctx, "docker", "volume", "ls", "-q", "--filter", "name="+ourName+"-check-")
 	for _, volume := range strings.Fields(out) {
-		if strings.HasPrefix(volume, ourName+"-check-") || strings.HasPrefix(volume, ourName+"-restore-") && !kept[volume] {
-			_, _ = b.apps.output(ctx, "docker", "volume", "rm", "-f", volume)
-		}
+		_, _ = b.apps.output(ctx, "docker", "volume", "rm", "-f", volume)
 	}
 }
 
@@ -582,14 +657,37 @@ func (e *postgresEngine) Download(ctx context.Context) (string, func(), error) {
 // Window is what WAL-G has in the bucket.
 func (e *postgresEngine) Window(ctx context.Context) (window, error) {
 	since, newest, err := e.b.walgWindow(ctx, e.app, e.database)
+	gaps, gapsErr := e.b.walgGaps(ctx, e.app, e.database)
+	for _, gap := range gaps {
+		// The history after a switch counts once its base backup is done.
+		if gap.to.IsZero() && newest.After(gap.from) {
+			newest = gap.from
+		}
+	}
+	state, stateErr := e.b.pgVolume(e.app + "/" + e.database.Service)
+	err = errors.Join(err, gapsErr, stateErr)
 	copies := []protocol.Copy{}
-	for _, previous := range e.b.pgVolumes()[e.app+"/"+e.database.Service].Previous {
+	for _, previous := range state.Previous {
 		if time.Since(previous.Until) <= keepHistory {
 			copies = append(copies, protocol.Copy{ID: previous.ID, At: previous.Until})
 		}
 	}
 	slices.SortFunc(copies, func(x, y protocol.Copy) int { return y.At.Compare(x.At) })
-	return window{since: since, newest: newest, note: e.b.walgNote(e.app, e.database), copies: copies}, err
+	return window{since: since, newest: newest, note: e.b.walgNote(e.app, e.database), copies: copies, gaps: gaps}, err
+}
+
+// walgGaps are the spans after each switch of a database the history has
+// no way back to.
+func (b *backups) walgGaps(ctx context.Context, app string, database protocol.Database) ([]gap, error) {
+	timelines, err := b.timelines(ctx, app, database)
+	if err != nil || len(timelines) == 0 {
+		return nil, err
+	}
+	bases, err := b.walgBaseBackups(ctx, app, database)
+	if err != nil {
+		return nil, err
+	}
+	return gapsOf(timelines, bases), nil
 }
 
 // forgetPostgres removes the companions of the Postgres services that do
@@ -657,7 +755,6 @@ func (b *backups) walgTimelineAt(ctx context.Context, app string, database proto
 	if err != nil {
 		return 0, err
 	}
-	slices.SortStableFunc(timelines, func(x, y pgTimeline) int { return x.Since.Compare(y.Since) })
 	live := 0
 	for _, timeline := range timelines {
 		if !timeline.Since.After(at) {
@@ -818,8 +915,10 @@ func otherServices(composeFile, except string) []string {
 }
 
 // recoverMoment recovers the database as it was at a moment into a new
-// volume, while the app keeps running. cleanup removes the volume.
-func (e *postgresEngine) recoverMoment(ctx context.Context, at time.Time, target pgTarget, data pgData, binary, envFile string) (string, func(), error) {
+// volume, while the app keeps running. The volume is written down in the
+// restore's mark before it exists, so a killed agent knows it is this
+// restore's (recoverRestores). cleanup removes the volume.
+func (e *postgresEngine) recoverMoment(ctx context.Context, at time.Time, target pgTarget, data pgData, binary, envFile string, run *restoreRun) (string, func(), error) {
 	b, app, database := e.b, e.app, e.database
 	if note := b.walgUnsupported(app, database); note != "" {
 		return "", nil, errors.New(note)
@@ -834,6 +933,9 @@ func (e *postgresEngine) recoverMoment(ctx context.Context, at time.Time, target
 	if win.since.IsZero() || at.Before(win.since) {
 		return "", nil, fmt.Errorf("%s is before the oldest moment of the backup of %s: pick one from the list", at.Format("Jan 2 15:04 UTC"), database.Path)
 	}
+	if gap := gapAt(win.gaps, at); gap != nil {
+		return "", nil, gap.refusal(database.Path)
+	}
 	timeline, base, err := b.walgPath(ctx, app, database, at, target.image, binary, envFile)
 	if err != nil {
 		return "", nil, err
@@ -841,15 +943,20 @@ func (e *postgresEngine) recoverMoment(ctx context.Context, at time.Time, target
 	if base == "" {
 		return "", nil, fmt.Errorf("no base backup reaches back to %s on %s: pick a later moment", at.Format("Jan 2 15:04 UTC"), database.Path)
 	}
-	// The restored data needs a volume of its size.
-	if err := e.enoughSpace(ctx, target, data); err != nil {
+	volume := ourName + "-restore-" + app + "-" + database.Service + "-" + time.Now().UTC().Format("20060102t150405")
+	run.mark.Built = volume
+	if err := run.save(); err != nil {
 		return "", nil, err
 	}
-	volume := ourName + "-restore-" + app + "-" + database.Service + "-" + time.Now().UTC().Format("20060102t150405")
 	if _, err := b.apps.output(ctx, "docker", "volume", "create", volume); err != nil {
 		return "", nil, err
 	}
 	cleanup := func() { _, _ = b.apps.output(context.Background(), "docker", "volume", "rm", "-f", volume) }
+	// The restored data needs room of its size where the volume is.
+	if err := e.enoughSpace(ctx, target, volume); err != nil {
+		cleanup()
+		return "", nil, err
+	}
 	pgdata := path.Join("/restore", data.sub())
 	docker := func(user string, extra []string, command ...string) (string, error) {
 		args := []string{"run", "--rm", "-u", user, "-v", volume + ":/restore"}
@@ -869,14 +976,103 @@ func (e *postgresEngine) recoverMoment(ctx context.Context, at time.Time, target
 	stamp := at.Format("2006-01-02 15:04:05.000000+00")
 	reached, err := b.recoverInto(ctx, volume, pgdata, target.image, binary, envFile, target.user, strconv.Itoa(timeline), stamp)
 	if err == nil && !reached {
-		// No change after the moment is in the log: its end is the moment.
-		_, err = b.recoverInto(ctx, volume, pgdata, target.image, binary, envFile, target.user, strconv.Itoa(timeline), "")
+		// The log ended before the moment. That is the moment only when it
+		// ended where the history in the bucket ends: a missing piece in
+		// between would make it an earlier one.
+		if _, err = b.recoverInto(ctx, volume, pgdata, target.image, binary, envFile, target.user, strconv.Itoa(timeline), ""); err == nil {
+			err = e.replayedToEnd(ctx, volume, pgdata, target.image, timeline, at)
+		}
 	}
 	if err != nil {
 		cleanup()
 		return "", nil, err
 	}
 	return volume, cleanup, nil
+}
+
+// replayedToEnd checks that a replay without a moment reached the newest
+// piece of the log of its timeline in the bucket: where it left the
+// timeline is in the history of the new one.
+func (e *postgresEngine) replayedToEnd(ctx context.Context, volume, pgdata, image string, timeline int, at time.Time) error {
+	b, app, database := e.b, e.app, e.database
+	out, err := b.apps.output(ctx, "docker", "run", "--rm", "-u", "postgres", "-v", volume+":/restore:ro", "--entrypoint", "sh", image, "-c",
+		`pg_controldata "$0" | sed -n -e "s/^Latest checkpoint's TimeLineID: *//p" -e "s/^Bytes per WAL segment: *//p"`, pgdata)
+	fields := strings.Fields(out)
+	if err != nil || len(fields) != 2 {
+		return fmt.Errorf("read where the replay ended: %v %s", err, out)
+	}
+	promoted, _ := strconv.Atoi(fields[0])
+	segmentSize, _ := strconv.ParseUint(fields[1], 10, 64)
+	history, err := b.apps.output(ctx, "docker", "run", "--rm", "-u", "postgres", "-v", volume+":/restore:ro", "--entrypoint", "cat", image, path.Join(pgdata, "pg_wal", fmt.Sprintf("%08X.history", promoted)))
+	if err != nil {
+		return fmt.Errorf("read where the replay ended: %v %s", err, history)
+	}
+	end, ok := parseHistory(history)[timeline]
+	if !ok || segmentSize == 0 {
+		return fmt.Errorf("read where the replay ended: %s", history)
+	}
+	newest := ""
+	prefix := fmt.Sprintf("%08X", timeline)
+	if err := b.walgList(ctx, app, database, func(name string, _ time.Time) {
+		if match := walgSegmentName.FindStringSubmatch(name); match != nil && strings.HasPrefix(match[1], prefix) && match[1] > newest {
+			newest = match[1]
+		}
+	}); err != nil {
+		return err
+	}
+	if reached := walSegment(timeline, end, segmentSize); newest != "" && reached < newest {
+		return fmt.Errorf("the history of %s has a gap: the log in the bucket breaks off after %s, before %s. Nothing changed; pick an earlier moment, and look at the bucket", database.Path, reached, at.Format("Jan 2 15:04 UTC"))
+	}
+	return nil
+}
+
+// walSegment is the name of the log segment that holds lsn on a timeline.
+func walSegment(timeline int, lsn, segmentSize uint64) string {
+	perID := uint64(0x100000000) / segmentSize
+	number := lsn / segmentSize
+	return fmt.Sprintf("%08X%08X%08X", timeline, number/perID, number%perID)
+}
+
+// gap is a span of time the history has no way back to: a restore, or an
+// undo, switched the database, and until the first base backup on its
+// timeline is done the log from then on cannot be replayed. To is zero
+// while that base backup is still to come.
+type gap struct {
+	from, to time.Time
+}
+
+// gapsOf are the gaps after each timeline a database went live on.
+func gapsOf(timelines []pgTimeline, bases []walgBackup) []gap {
+	gaps := []gap{}
+	for _, timeline := range timelines {
+		found := gap{from: timeline.Since}
+		for _, base := range bases {
+			on, _, ok := baseStart(base.name)
+			if ok && on == timeline.Timeline && base.at.After(timeline.Since) && (found.to.IsZero() || base.at.Before(found.to)) {
+				found.to = base.at
+			}
+		}
+		gaps = append(gaps, found)
+	}
+	return gaps
+}
+
+// gapAt is the gap a moment is in, or nil.
+func gapAt(gaps []gap, at time.Time) *gap {
+	for i, gap := range gaps {
+		if !at.Before(gap.from) && (gap.to.IsZero() || at.Before(gap.to)) {
+			return &gaps[i]
+		}
+	}
+	return nil
+}
+
+// refusal says why a moment in the gap cannot be gone back to.
+func (g gap) refusal(database string) error {
+	if g.to.IsZero() {
+		return fmt.Errorf("the history of %s starts again with the restore at %s: its first base backup is not done yet. Try again in a few minutes, or pick a moment before %s", database, g.from.Format("15:04 UTC"), g.from.Format("15:04 UTC"))
+	}
+	return fmt.Errorf("the history of %s has no way back to between %s and %s, while it started again after the restore at %s: pick a moment before or after", database, g.from.Format("15:04:05 UTC"), g.to.Format("15:04:05 UTC"), g.from.Format("15:04 UTC"))
 }
 
 // timelineOf reads the timeline the data in a mount is on, and the
@@ -945,22 +1141,28 @@ type pgOwed struct {
 
 // pgVolume is where one Postgres service keeps its data since a restore:
 // Target is its mount in the container, Sub where PGDATA is below it.
+// Anonymous says the image's own volume held the data, with no mount in
+// the compose file. Removed is when the app was removed: its volumes go
+// 7 days later.
 type pgVolume struct {
-	Target   string       `json:"target"`
-	Sub      string       `json:"sub,omitempty"`
-	Current  pgMount      `json:"current"`
-	Previous []pgPrevious `json:"previous,omitempty"`
-	Owed     *pgOwed      `json:"owed,omitempty"`
+	Target    string       `json:"target"`
+	Sub       string       `json:"sub,omitempty"`
+	Anonymous bool         `json:"anonymous,omitempty"`
+	Current   pgMount      `json:"current"`
+	Previous  []pgPrevious `json:"previous,omitempty"`
+	Owed      *pgOwed      `json:"owed,omitempty"`
+	Removed   time.Time    `json:"removed,omitzero"`
 }
 
-// pgVolumes are the volumes of every Postgres a restore switched, by
-// app/service.
-func (b *backups) pgVolumes() map[string]pgVolume {
-	volumes, _ := b.loadPgVolumes()
-	return volumes
+// uses says a database runs on a volume, or a restore can switch back to
+// it.
+func (v pgVolume) uses(source string) bool {
+	return v.Current.Source == source || slices.ContainsFunc(v.Previous, func(previous pgPrevious) bool { return previous.Source == source })
 }
 
-// loadPgVolumes is pgVolumes, with the error of a damaged file.
+// loadPgVolumes reads the volumes of every Postgres a restore switched,
+// by app/service. A damaged file is an error: nothing guesses where a
+// database runs.
 func (b *backups) loadPgVolumes() (map[string]pgVolume, error) {
 	b.journal.Lock()
 	defer b.journal.Unlock()
@@ -969,8 +1171,16 @@ func (b *backups) loadPgVolumes() (map[string]pgVolume, error) {
 	return volumes, err
 }
 
-// savePgVolume writes the volumes of one Postgres down whole: a switch.
-func (b *backups) savePgVolume(key string, volume pgVolume) error {
+// pgVolume is the entry of one Postgres, empty before its first restore.
+func (b *backups) pgVolume(key string) (pgVolume, error) {
+	volumes, err := b.loadPgVolumes()
+	return volumes[key], err
+}
+
+// changePgVolume reads, changes and writes the entry of one Postgres in
+// one step, under the lock, so two changes never undo each other. An
+// entry left with nothing in it goes.
+func (b *backups) changePgVolume(key string, change func(*pgVolume) error) error {
 	b.journal.Lock()
 	defer b.journal.Unlock()
 	file := filepath.Join(b.stateDir(), pgVolumesFile)
@@ -978,22 +1188,62 @@ func (b *backups) savePgVolume(key string, volume pgVolume) error {
 	if err := b.loadState(file, &volumes); err != nil {
 		return err
 	}
-	volumes[key] = volume
+	volume := volumes[key]
+	if err := change(&volume); err != nil {
+		return err
+	}
+	if volume.Current.Source == "" && len(volume.Previous) == 0 && volume.Owed == nil {
+		delete(volumes, key)
+	} else {
+		volumes[key] = volume
+	}
 	return writeState(file, volumes)
 }
 
+// retireVolumes takes the entries of a removed app out of its name: an
+// app made again under it starts on its own volumes. The volumes of the
+// restores go 7 days later (sweepVolumes).
+func (b *backups) retireVolumes(app string) error {
+	b.journal.Lock()
+	defer b.journal.Unlock()
+	file := filepath.Join(b.stateDir(), pgVolumesFile)
+	volumes := map[string]pgVolume{}
+	if err := b.loadState(file, &volumes); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	changed := false
+	for k, volume := range volumes {
+		if !volume.Removed.IsZero() || !strings.HasPrefix(k, app+"/") {
+			continue
+		}
+		volume.Removed, volume.Owed = now, nil
+		volumes[removedPrefix+now.Format(protocol.CopyIDLayout)+"/"+k] = volume
+		delete(volumes, k)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return writeState(file, volumes)
+}
+
+// removedPrefix starts the key of an entry of a removed app.
+const removedPrefix = "removed/"
+
 // updateOwed changes what a switch still owes and forgets it once paid.
 func (b *backups) updateOwed(app string, database protocol.Database, change func(*pgOwed)) {
-	k := app + "/" + database.Service
-	volume, ok := b.pgVolumes()[k]
-	if !ok || volume.Owed == nil {
-		return
-	}
-	change(volume.Owed)
-	if len(volume.Owed.Histories) == 0 && volume.Owed.Timeline == 0 && !volume.Owed.Fresh {
-		volume.Owed = nil
-	}
-	if err := b.savePgVolume(k, volume); err != nil {
+	err := b.changePgVolume(app+"/"+database.Service, func(volume *pgVolume) error {
+		if volume.Owed == nil {
+			return nil
+		}
+		change(volume.Owed)
+		if len(volume.Owed.Histories) == 0 && volume.Owed.Timeline == 0 && !volume.Owed.Fresh {
+			volume.Owed = nil
+		}
+		return nil
+	})
+	if err != nil {
 		slog.Error("backup: write down what a restore owes", "app", app, "error", err)
 	}
 }
@@ -1002,7 +1252,10 @@ func (b *backups) updateOwed(app string, database protocol.Database, change func
 // new timeline, with WAL-G from the data, and the timeline with the time
 // it went live, in timelines.json.
 func (b *backups) payOwed(ctx context.Context, app string, database protocol.Database, image, binary, envFile string) error {
-	volume := b.pgVolumes()[app+"/"+database.Service]
+	volume, err := b.pgVolume(app + "/" + database.Service)
+	if err != nil {
+		return err
+	}
 	owed := volume.Owed
 	if owed == nil || len(owed.Histories) == 0 && owed.Timeline == 0 {
 		return nil
@@ -1031,7 +1284,11 @@ func (b *backups) payOwed(ctx context.Context, app string, database protocol.Dat
 // settleSwitch pays, from Record, what the last switch of a database still
 // owes: its timeline in the bucket, then recording on the new data.
 func (b *backups) settleSwitch(ctx context.Context, app string, database protocol.Database) error {
-	owed := b.pgVolumes()[app+"/"+database.Service].Owed
+	volume, err := b.pgVolume(app + "/" + database.Service)
+	if err != nil {
+		return err
+	}
+	owed := volume.Owed
 	if owed == nil {
 		return nil
 	}
@@ -1101,6 +1358,7 @@ func (b *backups) timelines(ctx context.Context, app string, database protocol.D
 	if err := json.NewDecoder(object.Body).Decode(&timelines); err != nil {
 		return nil, fmt.Errorf("timelines.json in the bucket is damaged: %w", err)
 	}
+	slices.SortStableFunc(timelines, func(x, y pgTimeline) int { return x.Since.Compare(y.Since) })
 	return timelines, nil
 }
 
@@ -1129,18 +1387,17 @@ func (b *backups) addTimeline(ctx context.Context, app string, database protocol
 
 // applyVolumes points the Postgres services of an app at the volume a
 // restore switched them to, in a compose file, before compose runs it:
-// deploys, restarts and rollbacks keep the switch.
+// deploys, restarts and rollbacks keep the switch. When it cannot, the
+// app does not start: never on the data from before a restore.
 func (b *backups) applyVolumes(app, composeFile string) error {
 	volumes, err := b.loadPgVolumes()
 	if err != nil {
-		// Never start a database on the volume before a restore by
-		// mistake.
 		return err
 	}
 	var mine map[string]pgVolume
 	for k, volume := range volumes {
 		service, ok := strings.CutPrefix(k, app+"/")
-		if !ok || volume.Current.Source == "" {
+		if !ok || !volume.Removed.IsZero() || volume.Current.Source == "" {
 			continue
 		}
 		if mine == nil {
@@ -1159,21 +1416,24 @@ func (b *backups) applyVolumes(app, composeFile string) error {
 	if err := json.Unmarshal(body, &config); err != nil {
 		return err
 	}
-	if !pointVolumes(config, mine) {
-		return nil
+	changed, err := pointVolumes(config, mine)
+	if err != nil || !changed {
+		return err
 	}
 	return writeState(composeFile, config)
 }
 
 // pointVolumes points the data mounts of services at their volumes in a
-// compose config and says whether anything changed.
-func pointVolumes(config map[string]any, volumes map[string]pgVolume) bool {
+// compose config and says whether anything changed. A service that is
+// gone, or that keeps its data elsewhere now, is an error.
+func pointVolumes(config map[string]any, volumes map[string]pgVolume) (bool, error) {
 	changed := false
 	services, _ := config["services"].(map[string]any)
-	for name, volume := range volumes {
+	for _, name := range slices.Sorted(maps.Keys(volumes)) {
+		volume := volumes[name]
 		service, _ := services[name].(map[string]any)
 		if service == nil {
-			continue
+			return false, fmt.Errorf("since a restore the database of service %s runs on the volume %s, but the compose file has no service %s: moin does not start the app on other data. Name the service %s again", name, volume.Current.Source, name, name)
 		}
 		mounts, _ := service["volumes"].([]any)
 		found := false
@@ -1191,10 +1451,13 @@ func pointVolumes(config map[string]any, volumes map[string]pgVolume) bool {
 			delete(mount, "volume")
 			changed = true
 		}
-		if !found {
-			// The image's own anonymous volume held the data.
+		switch {
+		case !found && volume.Anonymous:
+			// The image's own volume held the data.
 			service["volumes"] = append(mounts, map[string]any{"type": volume.Current.Type, "source": volume.Current.Source, "target": volume.Target})
 			changed = true
+		case !found:
+			return false, fmt.Errorf("since a restore the database of service %s keeps its data at %s on the volume %s, but the compose file mounts nothing there: moin does not start it on other data. Mount its volume at %s again", name, volume.Target, volume.Current.Source, volume.Target)
 		}
 		if volume.Current.Type != "volume" {
 			continue
@@ -1209,34 +1472,63 @@ func pointVolumes(config map[string]any, volumes map[string]pgVolume) bool {
 			changed = true
 		}
 	}
-	return changed
+	return changed, nil
 }
 
-// sweepVolumes removes the volumes restores switched away from more than
-// 7 days ago, when no container uses them. Folders of bind mounts stay:
-// they are the server's.
+// sweepVolumes removes, once an hour, the volumes restores switched away
+// from more than 7 days ago, and those of an app removed 7 days ago. Only
+// the entry says so: a volume moin finds without one stays. Folders of
+// bind mounts stay, they are the server's, and so do the app's own
+// volumes of a removed app, as for any removed app. A volume a container
+// still uses stays too: docker refuses.
 func (b *backups) sweepVolumes(ctx context.Context, now time.Time) {
-	for k, volume := range b.pgVolumes() {
-		kept := volume.Previous[:0]
+	volumes, err := b.loadPgVolumes()
+	if err != nil {
+		slog.Error("backup: no volume removed; the state file cannot be read", "error", err)
+		return
+	}
+	for k, volume := range volumes {
+		removed := !volume.Removed.IsZero() && now.Sub(volume.Removed) > keepHistory
 		for _, previous := range volume.Previous {
-			if now.Sub(previous.Until) <= keepHistory || previous.Source == volume.Current.Source {
-				kept = append(kept, previous)
+			if !removed && (now.Sub(previous.Until) <= keepHistory || previous.Source == volume.Current.Source) {
 				continue
 			}
-			if previous.Type == "volume" {
-				if out, err := b.apps.output(ctx, "docker", "volume", "rm", previous.Source); err != nil {
-					slog.Warn("backup: remove a volume from before a restore", "volume", previous.Source, "error", err, "output", out)
-					kept = append(kept, previous)
-					continue
-				}
+			if previous.Type == "volume" && (!removed || strings.HasPrefix(previous.Source, ourName+"-restore-")) && !b.removeVolume(ctx, previous.Source) {
+				continue
 			}
-			slog.Info("backup: removed the volume from before a restore", "volume", previous.Source)
-		}
-		if len(kept) != len(volume.Previous) {
-			volume.Previous = kept
-			if err := b.savePgVolume(k, volume); err != nil {
+			err := b.changePgVolume(k, func(volume *pgVolume) error {
+				volume.Previous = slices.DeleteFunc(volume.Previous, func(other pgPrevious) bool { return other.ID == previous.ID })
+				return nil
+			})
+			if err != nil {
 				slog.Error("backup: write the volumes down", "error", err)
 			}
 		}
+		if !removed {
+			continue
+		}
+		if volume.Current.Type == "volume" && strings.HasPrefix(volume.Current.Source, ourName+"-restore-") && !b.removeVolume(ctx, volume.Current.Source) {
+			continue
+		}
+		err := b.changePgVolume(k, func(volume *pgVolume) error {
+			*volume = pgVolume{}
+			return nil
+		})
+		if err != nil {
+			slog.Error("backup: write the volumes down", "error", err)
+		}
 	}
+}
+
+// removeVolume removes a volume and says whether it is gone.
+func (b *backups) removeVolume(ctx context.Context, volume string) bool {
+	if out, err := b.apps.output(ctx, "docker", "volume", "rm", volume); err != nil {
+		if strings.Contains(out, "no such volume") {
+			return true
+		}
+		slog.Warn("backup: remove a volume from before a restore", "volume", volume, "error", err, "output", out)
+		return false
+	}
+	slog.Info("backup: removed the volume from before a restore", "volume", volume)
+	return true
 }

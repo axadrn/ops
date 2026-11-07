@@ -42,7 +42,10 @@ func TestRecoverRestores(t *testing.T) {
 		return strings.TrimSpace(compose("ps", "-q", "--status", "running")) != ""
 	}
 	b := newBackups(a, func(protocol.MessageType, string, any) {})
-	b.savePgVolume(app+"/db", pgVolume{Target: "/var/lib/postgresql/data", Current: pgMount{Type: "volume", Source: "moin-restore-x"}})
+	b.changePgVolume(app+"/db", func(v *pgVolume) error {
+		v.Target, v.Current = "/var/lib/postgresql/data", pgMount{Type: "volume", Source: "moin-restore-x"}
+		return nil
+	})
 
 	cases := []struct {
 		name  string
@@ -64,12 +67,18 @@ func TestRecoverRestores(t *testing.T) {
 			mark := c.mark
 			mark.ID, mark.App, mark.Database, mark.StartedAt = c.name, app, "/data/app.db", time.Now()
 			b.saveMark(mark)
+			// The file a SQLite restore built and never renamed.
+			leftover := file + "." + ourName + "-restore"
+			os.WriteFile(leftover, []byte("half"), 0o600)
 
 			// The agent starts again.
 			restarted := newBackups(a, func(protocol.MessageType, string, any) {})
 			restarted.recoverRestores(ctx)
 			if !runs() {
 				t.Fatal("the app does not run")
+			}
+			if _, err := os.Stat(leftover); err == nil {
+				t.Error("the restored file of a restore that did not switch is left")
 			}
 			if marks := restarted.marks(); len(marks) != 0 {
 				t.Fatalf("marks left: %+v", marks)
@@ -83,5 +92,86 @@ func TestRecoverRestores(t *testing.T) {
 			}
 			os.Remove(filepath.Join(restarted.stateDir(), clearFirstFile))
 		})
+	}
+}
+
+// TestRecoverBuiltVolumes: a restore that did not switch leaves only the
+// volume it built, written down in its mark, and the next start removes
+// that one; never one a database runs on, a restore can switch back to,
+// that carries the mark of a switch, or when the state file is damaged.
+func TestRecoverBuiltVolumes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
+	app := fmt.Sprintf("built-%d", time.Now().UnixNano()%1e9)
+	volume := func(name string, marked bool) string {
+		t.Helper()
+		name = ourName + "-restore-" + app + "-db-" + name
+		if out, err := exec.CommandContext(ctx, "docker", "volume", "create", name).CombinedOutput(); err != nil {
+			t.Fatalf("volume: %v %s", err, out)
+		}
+		t.Cleanup(func() { exec.Command("docker", "volume", "rm", "-f", name).Run() })
+		if marked {
+			if out, err := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", name+":/v", "alpine:latest", "touch", "/v/"+switchedMark).CombinedOutput(); err != nil {
+				t.Fatalf("mark: %v %s", err, out)
+			}
+		}
+		return name
+	}
+	exists := func(name string) bool { return exec.Command("docker", "volume", "inspect", name).Run() == nil }
+	b := newBackups(a, func(protocol.MessageType, string, any) {})
+	crash := func(id, built string) {
+		t.Helper()
+		b.saveMark(restoreMark{ID: id, App: app, Database: "postgres-db", Postgres: true, Service: "db", StartedAt: time.Now(), Built: built, Volume: built, Image: "alpine:latest"})
+		newBackups(a, func(protocol.MessageType, string, any) {}).recoverRestores(ctx)
+	}
+
+	clean := volume("clean", false)
+	crash("clean", clean)
+	if exists(clean) {
+		t.Error("the volume of a restore that did not switch is left")
+	}
+	marked := volume("marked", true)
+	crash("marked", marked)
+	if !exists(marked) {
+		t.Error("a volume with the mark of a switch went")
+	}
+	undo := volume("undo", false)
+	b.changePgVolume(app+"/db", func(v *pgVolume) error {
+		v.Current = pgMount{Type: "volume", Source: "elsewhere"}
+		v.Previous = []pgPrevious{{pgMount: pgMount{Type: "volume", Source: undo}, ID: "20261107T140200Z", Until: time.Now()}}
+		return nil
+	})
+	crash("undo", undo)
+	if !exists(undo) {
+		t.Error("the undo of a restore went")
+	}
+	used := volume("used", false)
+	container := "moin-test-" + app
+	if out, err := exec.CommandContext(ctx, "docker", "create", "--name", container, "-v", used+":/v", "alpine:latest").CombinedOutput(); err != nil {
+		t.Fatalf("container: %v %s", err, out)
+	}
+	defer exec.Command("docker", "rm", "-f", container).Run()
+	crash("used", used)
+	if !exists(used) {
+		t.Error("a volume a container uses went")
+	}
+	damaged := volume("damaged", false)
+	os.WriteFile(filepath.Join(b.stateDir(), pgVolumesFile), []byte(`{"`), 0o600)
+	crash("damaged", damaged)
+	if !exists(damaged) {
+		t.Error("a volume went while the state file is damaged")
+	}
+	for _, state := range b.restoreStates(app) {
+		if state.ID == "damaged" && !strings.Contains(state.Error, "cannot tell") {
+			t.Errorf("damaged: %+v", state)
+		}
+	}
+	// What a check left goes, a restore volume nobody wrote down stays.
+	os.Remove(filepath.Join(b.stateDir(), pgVolumesFile))
+	stray := volume("stray", false)
+	b.removeThrowaways(ctx)
+	if !exists(stray) {
+		t.Error("a restore volume went because no file names it")
 	}
 }

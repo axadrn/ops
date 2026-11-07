@@ -248,6 +248,30 @@ func TestSQLiteGoBack(t *testing.T) {
 		t.Fatalf("the check after the crashed restore: %v", err)
 	}
 
+	// The app does not start after the switch: the restore says the
+	// restored data is in place, not that nothing changed.
+	time.Sleep(1100 * time.Millisecond)
+	beforeStart := time.Now().UTC()
+	time.Sleep(1100 * time.Millisecond)
+	db.Exec(`INSERT INTO notes (body) VALUES ('h')`)
+	waitRecorded(t, b.engine(app, database), beforeStart)
+	good, _ := os.ReadFile(composeFile)
+	b.keepHook = func() (string, error) { return "", os.WriteFile(composeFile, []byte("{"), 0o600) }
+	err = b.restore(ctx, protocol.BackupRestore{ID: "start-fails", App: app, Database: database.Path, At: &beforeStart})
+	b.keepHook = nil
+	os.WriteFile(composeFile, good, 0o600)
+	if err == nil || !strings.Contains(err.Error(), "the restored data is in place, but") || strings.Contains(err.Error(), "nothing changed") {
+		t.Fatalf("a start that fails after the switch: %v", err)
+	}
+	if out, err := exec.CommandContext(ctx, "docker", "compose", "-p", project(app), "-f", composeFile, "up", "-d").CombinedOutput(); err != nil {
+		t.Fatalf("compose up: %v %s", err, out)
+	}
+	db.Close()
+	db = reopen(t, file)
+	if got := rows(); got != "b,c,d,e,g,e2" {
+		t.Fatalf("after a start that failed: %s, want b,c,d,e,g,e2", got)
+	}
+
 	// The bucket is out of reach right after the swap, and the agent
 	// restarts before it could clear the old history: the new agent
 	// clears it before it follows the file again.

@@ -149,6 +149,28 @@ func TestPostgresGoBack(t *testing.T) {
 			t.Fatalf("no new WAL in the bucket after a flush: %s", logs)
 		}
 	}
+	vol := func() pgVolume {
+		t.Helper()
+		volume, err := b.pgVolume(app + "/db")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return volume
+	}
+	// settled waits until the history goes on after a switch: its first
+	// base backup is done, so moments from then on are offered.
+	settled := func() {
+		t.Helper()
+		for deadline := time.Now().Add(3 * time.Minute); ; time.Sleep(time.Second) {
+			gaps, err := b.walgGaps(ctx, app, database)
+			if err == nil && (len(gaps) == 0 || !gaps[len(gaps)-1].to.IsZero()) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the history does not go on after the restore: %+v %v", gaps, err)
+			}
+		}
+	}
 	goBack := func(request protocol.BackupRestore, want string) {
 		t.Helper()
 		request.App, request.Database = app, database.Path
@@ -159,6 +181,7 @@ func TestPostgresGoBack(t *testing.T) {
 		if got := orders(); got != want {
 			t.Fatalf("after the restore %+v: %s, want %s", request, got, want)
 		}
+		settled()
 	}
 	pause := func() time.Time {
 		time.Sleep(2 * time.Second)
@@ -196,7 +219,7 @@ func TestPostgresGoBack(t *testing.T) {
 	if len(copies) != 1 {
 		t.Fatalf("states before restores after the restore %+v", copies)
 	}
-	if volume := b.pgVolumes()[app+"/db"]; !strings.HasPrefix(volume.Current.Source, "moin-restore-walgtest-db-") || len(volume.Previous) != 1 || volume.Previous[0].Source != "moin-walgtest-pgdata" {
+	if volume := vol(); !strings.HasPrefix(volume.Current.Source, "moin-restore-walgtest-db-") || len(volume.Previous) != 1 || volume.Previous[0].Source != "moin-walgtest-pgdata" {
 		t.Fatalf("volumes after the restore: %+v", volume)
 	}
 	// A deploy, which recreates the database, keeps the restored volume.
@@ -218,7 +241,7 @@ func TestPostgresGoBack(t *testing.T) {
 	}
 	// Undo: the switch back to the volume before the restore, as it was.
 	goBack(protocol.BackupRestore{Copy: copies[0].ID}, "1:T2,2:T1,3:T2,4:T2")
-	if volume := b.pgVolumes()[app+"/db"]; volume.Current.Source != "moin-walgtest-pgdata" || len(volume.Previous) != 1 {
+	if volume := vol(); volume.Current.Source != "moin-walgtest-pgdata" || len(volume.Previous) != 1 {
 		t.Fatalf("volumes after the undo: %+v", volume)
 	}
 	// The undo can be undone too.
@@ -264,10 +287,22 @@ func TestPostgresGoBack(t *testing.T) {
 		if !errors.Is(err, errCrash) || webRuns() {
 			t.Fatalf("crash at %s: %v, web runs %v", step, err, webRuns())
 		}
+		built := ""
+		for _, mark := range b.marks() {
+			if mark.ID == id {
+				built = mark.Built
+			}
+		}
 		restarted := newBackups(a, func(protocol.MessageType, string, any) {})
 		restarted.recoverRestores(ctx)
 		if !webRuns() {
 			t.Fatalf("after the crash at %s web does not run", step)
+		}
+		// The volume the restore built goes when it did not switch to it,
+		// and stays when it did.
+		gone := exec.Command("docker", "volume", "inspect", built).Run() != nil
+		if built == "" || gone != (step == "stopped") {
+			t.Fatalf("after the crash at %s the volume %q is gone %v", step, built, gone)
 		}
 		ready()
 		for _, state := range restarted.restoreStates(app) {
@@ -305,7 +340,7 @@ func TestPostgresGoBack(t *testing.T) {
 	if got := orders(); got != "1:T1,2:T1,7:T4" {
 		t.Fatalf("after a crash after the switch: %s", got)
 	}
-	if owed := b.pgVolumes()[app+"/db"].Owed; owed == nil || owed.Timeline == 0 || len(owed.Histories) == 0 || !owed.Fresh {
+	if owed := vol().Owed; owed == nil || owed.Timeline == 0 || len(owed.Histories) == 0 || !owed.Fresh {
 		t.Fatalf("owed after the crash: %+v", owed)
 	}
 	err = b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &afterT4})
@@ -315,7 +350,7 @@ func TestPostgresGoBack(t *testing.T) {
 	if err := e.Record(ctx); err != nil {
 		t.Fatalf("Record after the crash: %v", err)
 	}
-	if owed := b.pgVolumes()[app+"/db"].Owed; owed != nil {
+	if owed := vol().Owed; owed != nil {
 		t.Fatalf("still owed after Record: %+v", owed)
 	}
 	if after := histories(); after != before+1 {
@@ -392,6 +427,34 @@ func TestPostgresGoBack(t *testing.T) {
 	list, err := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", dump+":/copy.dump:ro", "postgres:17", "pg_restore", "--list", "/copy.dump").CombinedOutput()
 	if err != nil || !strings.Contains(string(list), "TABLE public orders") {
 		t.Fatalf("pg_restore --list: %v %s", err, list)
+	}
+
+	// A missing piece of the log never turns into an earlier moment: a
+	// restore past it says so and changes nothing.
+	segment := sql(`SELECT pg_walfile_name(pg_current_wal_lsn());`)
+	sql(`INSERT INTO orders VALUES (10, 'T7');`)
+	flush()
+	sql(`INSERT INTO orders VALUES (11, 'T8');`)
+	flush()
+	afterGap := pause()
+	_, walPrefix, _ := b.walgPrefix(app, database)
+	deleted := 0
+	b.walgList(ctx, app, database, func(name string, _ time.Time) {
+		if strings.HasPrefix(name, segment) {
+			client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(walPrefix + "/wal_005/" + name)})
+			deleted++
+		}
+	})
+	if deleted == 0 {
+		t.Fatalf("no segment %s in the bucket", segment)
+	}
+	err = b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &afterGap})
+	if err == nil || !strings.Contains(err.Error(), "has a gap") {
+		t.Fatalf("a restore across a missing piece of the log: %v", err)
+	}
+	ready()
+	if got := orders(); got != "1:T1,2:T1,7:T4,9:T6,10:T7,11:T8" {
+		t.Fatalf("after a restore across a gap: %s", got)
 	}
 
 	// The slot is capped, so a WAL-G that stays down cannot fill the disk.
@@ -483,7 +546,7 @@ func TestPostgresGoBack(t *testing.T) {
 	if out, _ := exec.Command("docker", "volume", "ls", "-q", "--filter", "name=moin-check-").Output(); strings.TrimSpace(string(out)) != "" {
 		t.Errorf("check volumes left: %s", out)
 	}
-	volume := b.pgVolumes()[app+"/db"]
+	volume := vol()
 	left, _ := exec.Command("docker", "volume", "ls", "-q", "--filter", "name=moin-restore-").Output()
 	for _, name := range strings.Fields(string(left)) {
 		if name != volume.Current.Source && !slices.ContainsFunc(volume.Previous, func(previous pgPrevious) bool { return previous.Source == name }) {
@@ -492,11 +555,36 @@ func TestPostgresGoBack(t *testing.T) {
 	}
 	// 7 days after a restore its undo goes, but never the volume in use.
 	b.sweepVolumes(ctx, time.Now().Add(keepHistory+time.Hour))
-	if volume := b.pgVolumes()[app+"/db"]; len(volume.Previous) != 0 {
+	if volume := vol(); len(volume.Previous) != 0 {
 		t.Errorf("undos left after 7 days: %+v", volume.Previous)
 	}
-	if out, err := exec.Command("docker", "volume", "inspect", b.pgVolumes()[app+"/db"].Current.Source).CombinedOutput(); err != nil {
+	if out, err := exec.Command("docker", "volume", "inspect", vol().Current.Source).CombinedOutput(); err != nil {
 		t.Errorf("the volume in use went: %v %s", err, out)
+	}
+
+	// The app is removed: an app made again under its name starts on its
+	// own volume, and the restored one goes 7 days later.
+	current := vol().Current.Source
+	exec.Command("docker", "rm", "-f", companionName(app, "db")).Run()
+	if out, err := exec.Command("docker", "compose", "-p", project(app), "-f", composeFile, "down").CombinedOutput(); err != nil {
+		t.Fatalf("down: %v %s", err, out)
+	}
+	if err := b.retireVolumes(app); err != nil {
+		t.Fatal(err)
+	}
+	if vol().Current.Source != "" {
+		t.Fatal("the removed app's switch is still its name's")
+	}
+	b.sweepVolumes(ctx, time.Now().Add(time.Hour))
+	if exec.Command("docker", "volume", "inspect", current).Run() != nil {
+		t.Fatal("the restored volume of a removed app went at once")
+	}
+	b.sweepVolumes(ctx, time.Now().Add(keepHistory+time.Hour))
+	if exec.Command("docker", "volume", "inspect", current).Run() == nil {
+		t.Error("the restored volume of an app removed 7 days ago is left")
+	}
+	if volumes, _ := b.loadPgVolumes(); len(volumes) != 0 {
+		t.Errorf("entries left: %+v", volumes)
 	}
 }
 

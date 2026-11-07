@@ -353,6 +353,8 @@ func (r *runner) handle(ctx context.Context, message protocol.Message) {
 		r.backupList(ctx, message)
 	case protocol.TypeBackupRestore:
 		r.backupRestore(ctx, message)
+	case protocol.TypeBackupRestores:
+		r.backupRestores(message)
 	case protocol.TypeBackupDownload:
 		r.backupDownload(ctx, message)
 	case protocol.TypeExecStart:

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,5 +89,45 @@ func TestBrokenFile(t *testing.T) {
 	}
 	if brokenFile("INFO: 2026/11/07 12:11:32 Finished extraction of part_001.tar.lz4") {
 		t.Error("a finished file is broken")
+	}
+}
+
+// TestGaps: after each switch the history has no way back until the first
+// base backup on its timeline is done; before and after it does.
+func TestGaps(t *testing.T) {
+	t0 := time.Date(2026, 11, 7, 14, 0, 0, 0, time.UTC)
+	timelines := []pgTimeline{{Since: t0, Timeline: 2}, {Since: t0.Add(time.Hour), Timeline: 1}}
+	bases := []walgBackup{
+		{name: "base_000000010000000000000002", at: t0.Add(-time.Hour)},
+		{name: "base_000000020000000000000009", at: t0.Add(5 * time.Minute)},
+		{name: "base_00000002000000000000000C", at: t0.Add(10 * time.Minute)},
+	}
+	gaps := gapsOf(timelines, bases)
+	if len(gaps) != 2 || !gaps[0].to.Equal(t0.Add(5*time.Minute)) || !gaps[1].to.IsZero() {
+		t.Fatalf("gaps %+v", gaps)
+	}
+	for _, c := range []struct {
+		at  time.Time
+		gap bool
+	}{{t0.Add(-time.Minute), false}, {t0, true}, {t0.Add(4 * time.Minute), true}, {t0.Add(5 * time.Minute), false}, {t0.Add(30 * time.Minute), false}, {t0.Add(2 * time.Hour), true}} {
+		if got := gapAt(gaps, c.at) != nil; got != c.gap {
+			t.Errorf("%s in a gap: %v, want %v", c.at, got, c.gap)
+		}
+	}
+	if err := gapAt(gaps, t0.Add(2*time.Hour)).refusal("postgres-db"); !strings.Contains(err.Error(), "not done yet") {
+		t.Errorf("open gap: %v", err)
+	}
+	if err := gapAt(gaps, t0.Add(time.Minute)).refusal("postgres-db"); !strings.Contains(err.Error(), "pick a moment before or after") {
+		t.Errorf("closed gap: %v", err)
+	}
+}
+
+// TestWalSegment: the segment of a position, as Postgres names it.
+func TestWalSegment(t *testing.T) {
+	if got := walSegment(2, 1<<32|3<<24|0x148, 16<<20); got != "000000020000000100000003" {
+		t.Fatalf("segment %s", got)
+	}
+	if got := walSegment(1, 1<<32|5<<26, 64<<20); got != "000000010000000100000005" {
+		t.Fatalf("segment of 64 MB %s", got)
 	}
 }

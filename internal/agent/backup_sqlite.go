@@ -104,6 +104,17 @@ func (e *sqliteEngine) Record(ctx context.Context) error {
 	db.Replica = litestream.NewReplicaWithClient(db, replicaClientAt(&item.bucket, item.prefix))
 	b.mu.Unlock()
 	go func() {
+		// One file changes hands one at a time, and only to the newest:
+		// two Records close together, a new bucket and then a new app
+		// ID, would race and leave it with none.
+		b.registering.Lock()
+		defer b.registering.Unlock()
+		b.mu.Lock()
+		newest := b.store == store && b.watched[hostPath].db == db
+		b.mu.Unlock()
+		if !newest {
+			return
+		}
 		// The same file under a new app ID: the old one stops first, or
 		// the store would keep it.
 		if known {
@@ -228,7 +239,10 @@ func (e *sqliteEngine) GoBack(ctx context.Context, to moment, run *restoreRun) e
 			b.mu.Unlock()
 		}
 	}
-	return startErr
+	if startErr != nil {
+		return fmt.Errorf("the restored data is in place, but %w", startErr)
+	}
+	return nil
 }
 
 // clearTimeout bounds clearing the history from before a restore right
@@ -265,12 +279,29 @@ func prepareSwitch(restored, target string) error {
 		return err
 	}
 	matchOwnerOf(restored, info)
+	// The restored file is on disk before the rename points to it.
+	if err := syncFile(restored); err != nil {
+		return err
+	}
 	for _, file := range []string{target + "-wal", target + "-shm", target + "-journal", restored + "-wal", restored + "-shm", restored + "-journal"} {
 		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
 	return nil
+}
+
+// syncFile writes a file's data to the disk.
+func syncFile(name string) error {
+	file, err := os.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 // inode is the inode of a file, 0 without one.
@@ -350,11 +381,39 @@ func (e *sqliteEngine) Window(ctx context.Context) (window, error) {
 		return window{}, err
 	}
 	copies, copiesErr := e.b.copies(ctx, e.app, e.database)
-	since, newest, err := litestream.NewReplicaWithClient(nil, client).TimeBounds(ctx)
+	since, newest, err := timeBounds(ctx, client)
 	if err != nil {
 		return window{copies: copies}, copiesErr
 	}
-	return window{since: since.UTC(), newest: newest.UTC(), copies: copies}, copiesErr
+	return window{since: since, newest: newest, copies: copies}, copiesErr
+}
+
+// timeBounds is the oldest moment of the history and its newest change.
+// Litestream's own newest is the newest upload, also of a compaction that
+// changed nothing; the newest change is the first upload of the newest
+// transaction.
+func timeBounds(ctx context.Context, client *lss3.ReplicaClient) (since, newest time.Time, err error) {
+	var top uint64
+	for level := litestream.SnapshotLevel; level >= 0; level-- {
+		files, err := client.LTXFiles(ctx, level, 0, false)
+		if err != nil {
+			return since, newest, err
+		}
+		for files.Next() {
+			info := files.Item()
+			at := info.CreatedAt.UTC()
+			if since.IsZero() || at.Before(since) {
+				since = at
+			}
+			if tx := uint64(info.MaxTXID); tx > top || tx == top && at.Before(newest) {
+				top, newest = tx, at
+			}
+		}
+		if err := files.Close(); err != nil {
+			return since, newest, err
+		}
+	}
+	return since, newest, nil
 }
 
 // client is where Litestream keeps the changes of the file.

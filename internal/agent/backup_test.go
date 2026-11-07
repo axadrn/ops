@@ -9,13 +9,16 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/axadrn/moin/protocol"
+	"github.com/benbjohnson/litestream"
 )
 
 // testS3 is the S3 endpoint and bucket of the tests that need one, such as
@@ -81,7 +84,23 @@ func waitRecorded(t *testing.T, e engine, after time.Time) window {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	t.Fatalf("nothing recorded after %s", after)
+	files := ""
+	if sqlite, ok := e.(*sqliteEngine); ok {
+		if client, err := sqlite.client(); err == nil {
+			for level := litestream.SnapshotLevel; level >= 0; level-- {
+				itr, err := client.LTXFiles(context.Background(), level, 0, false)
+				if err != nil {
+					continue
+				}
+				for itr.Next() {
+					info := itr.Item()
+					files += fmt.Sprintf(" L%d:%d-%d@%s", level, info.MinTXID, info.MaxTXID, info.CreatedAt.Format("15:04:05.000"))
+				}
+				itr.Close()
+			}
+		}
+	}
+	t.Fatalf("nothing recorded after %s:%s", after, files)
 	return window{}
 }
 
@@ -135,12 +154,26 @@ func TestBackups(t *testing.T) {
 	if n := countNotes(t, back); n != 2 {
 		t.Fatalf("at the noted moment %d notes, want 2", n)
 	}
-	// A moment after the newest change is the newest state.
-	if err := e.restoreTo(ctx, time.Now().Add(time.Minute), filepath.Join(dir, "newest.db")); err != nil {
-		t.Fatalf("a moment after the newest change: %v", err)
+	// A moment after the newest change is the newest state, once its last
+	// part reached the bucket: the window's newest can be an earlier
+	// part of the same write.
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(300 * time.Millisecond) {
+		newest := filepath.Join(dir, "newest.db")
+		removeDatabase(newest)
+		if err := e.restoreTo(ctx, time.Now().Add(time.Minute), newest); err != nil {
+			t.Fatalf("a moment after the newest change: %v", err)
+		}
+		n := countNotes(t, newest)
+		if n == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the newest state has %d notes, want 3", n)
+		}
 	}
-	if n := countNotes(t, filepath.Join(dir, "newest.db")); n != 3 {
-		t.Fatalf("the newest state has %d notes, want 3", n)
+	// The newest change is the write, not a compaction after it.
+	if w, _ := e.Window(ctx); w.newest.After(time.Now()) || w.newest.Before(noted) {
+		t.Fatalf("newest %s", w.newest)
 	}
 	// Before the history it says so, not Litestream's words.
 	err := e.restoreTo(ctx, time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC), filepath.Join(dir, "early.db"))
@@ -564,28 +597,214 @@ func TestSpaceFor(t *testing.T) {
 }
 
 // TestStateFiles: every state file is written whole, and a damaged one is
-// reported, not skipped.
+// reported, not skipped: no switch is written over it, compose does not
+// start on it, no volume is swept for it.
 func TestStateFiles(t *testing.T) {
 	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
 	b := newBackups(a, func(protocol.MessageType, string, any) {})
 	file := filepath.Join(b.stateDir(), pgVolumesFile)
-	if err := b.savePgVolume("shop/db", pgVolume{Current: pgMount{Type: "volume", Source: "v1"}}); err != nil {
+	if err := b.changePgVolume("shop/db", func(v *pgVolume) error { v.Current = pgMount{Type: "volume", Source: "v1"}; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.pgVolumes()["shop/db"].Current.Source; got != "v1" {
-		t.Fatalf("read back %q", got)
+	if got, err := b.pgVolume("shop/db"); err != nil || got.Current.Source != "v1" {
+		t.Fatalf("read back %+v %v", got, err)
 	}
 	if leftovers, _ := filepath.Glob(filepath.Join(b.stateDir(), "."+pgVolumesFile+".*")); len(leftovers) != 0 {
 		t.Fatalf("temp files left: %v", leftovers)
 	}
 	os.WriteFile(file, []byte(`{"shop/db": {"curr`), 0o600)
-	if err := b.savePgVolume("shop/db", pgVolume{}); err == nil {
+	if err := b.changePgVolume("shop/db", func(*pgVolume) error { return nil }); err == nil {
 		t.Fatal("a switch was written over a damaged file")
+	}
+	if _, err := b.pgVolume("shop/db"); err == nil {
+		t.Fatal("a damaged file read as empty")
 	}
 	if !strings.Contains(b.stateErr, "damaged") {
 		t.Fatalf("not reported: %q", b.stateErr)
 	}
 	if err := b.applyVolumes("shop", filepath.Join(t.TempDir(), "compose.json")); err == nil {
 		t.Fatal("compose ran on a damaged volume file")
+	}
+	if _, err := b.switched(restoreMark{Postgres: true, App: "shop", Service: "db", Volume: "v1"}); err == nil {
+		t.Fatal("a crashed restore was judged on a damaged file")
+	}
+}
+
+// TestChangePgVolumeAtOnce: changes of one entry at the same time, like a
+// switch, the sweep and Record paying what a switch owes, never undo each
+// other.
+func TestChangePgVolumeAtOnce(t *testing.T) {
+	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
+	b := newBackups(a, func(protocol.MessageType, string, any) {})
+	b.changePgVolume("shop/db", func(v *pgVolume) error {
+		v.Current = pgMount{Type: "volume", Source: "v0"}
+		v.Owed = &pgOwed{Timeline: 2, Fresh: true}
+		for i := range 20 {
+			v.Previous = append(v.Previous, pgPrevious{pgMount: pgMount{Type: "volume", Source: fmt.Sprintf("old-%d", i)}, ID: fmt.Sprintf("old-%d", i)})
+		}
+		return nil
+	})
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			// A switch adds an undo.
+			b.changePgVolume("shop/db", func(v *pgVolume) error {
+				v.Previous = append(v.Previous, pgPrevious{pgMount: pgMount{Type: "volume", Source: fmt.Sprintf("new-%d", i)}, ID: fmt.Sprintf("new-%d", i)})
+				return nil
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			// The sweep removes an old one.
+			b.changePgVolume("shop/db", func(v *pgVolume) error {
+				v.Previous = slices.DeleteFunc(v.Previous, func(p pgPrevious) bool { return p.ID == fmt.Sprintf("old-%d", i) })
+				return nil
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			b.updateOwed("shop", protocol.Database{Service: "db"}, func(owed *pgOwed) { owed.Timeline = 0 })
+		}()
+	}
+	wg.Wait()
+	got, err := b.pgVolume("shop/db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Previous) != 20 || got.Current.Source != "v0" || got.Owed == nil || got.Owed.Timeline != 0 || !got.Owed.Fresh {
+		t.Fatalf("lost a change: %+v %+v", got, got.Owed)
+	}
+	for _, p := range got.Previous {
+		if !strings.HasPrefix(p.ID, "new-") {
+			t.Fatalf("an old one is left: %+v", got.Previous)
+		}
+	}
+}
+
+// TestPointVolumes: compose runs the database on the switched volume, and
+// refuses when the service or its mount is gone; the image's own volume
+// gets a mount.
+func TestPointVolumes(t *testing.T) {
+	config := func(services map[string]any) map[string]any {
+		return map[string]any{"services": services, "volumes": map[string]any{"pgdata": map[string]any{"name": "shop_pgdata"}}}
+	}
+	db := func(target string) map[string]any {
+		return map[string]any{"image": "postgres:17", "volumes": []any{map[string]any{"type": "volume", "source": "pgdata", "target": target}}}
+	}
+	switched := map[string]pgVolume{"db": {Target: "/var/lib/postgresql/data", Current: pgMount{Type: "volume", Source: "moin-restore-shop-db-1"}}}
+
+	c := config(map[string]any{"db": db("/var/lib/postgresql/data")})
+	if changed, err := pointVolumes(c, switched); err != nil || !changed {
+		t.Fatalf("switch: %v %v", changed, err)
+	}
+	mount := c["services"].(map[string]any)["db"].(map[string]any)["volumes"].([]any)[0].(map[string]any)
+	top := c["volumes"].(map[string]any)["moin-restore-shop-db-1"].(map[string]any)
+	if mount["source"] != "moin-restore-shop-db-1" || top["external"] != true {
+		t.Fatalf("not switched: %v %v", mount, top)
+	}
+	if changed, _ := pointVolumes(c, switched); changed {
+		t.Fatal("a second run changed it again")
+	}
+	if _, err := pointVolumes(config(map[string]any{"web": map[string]any{}}), switched); err == nil || !strings.Contains(err.Error(), "no service db") {
+		t.Fatalf("a service that is gone: %v", err)
+	}
+	// postgres:18 keeps its data one folder up: the mount moved.
+	if _, err := pointVolumes(config(map[string]any{"db": db("/var/lib/postgresql")}), switched); err == nil || !strings.Contains(err.Error(), "mounts nothing there") {
+		t.Fatalf("a mount that moved: %v", err)
+	}
+	anonymous := map[string]pgVolume{"db": {Target: "/var/lib/postgresql/data", Anonymous: true, Current: pgMount{Type: "volume", Source: "moin-restore-shop-db-1"}}}
+	c = config(map[string]any{"db": map[string]any{"image": "postgres:17"}})
+	if changed, err := pointVolumes(c, anonymous); err != nil || !changed || len(c["services"].(map[string]any)["db"].(map[string]any)["volumes"].([]any)) != 1 {
+		t.Fatalf("the image's own volume: %v %v %v", changed, err, c)
+	}
+}
+
+// TestRetireVolumes: a removed app's switch does not follow an app made
+// again under its name.
+func TestRetireVolumes(t *testing.T) {
+	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
+	b := newBackups(a, func(protocol.MessageType, string, any) {})
+	b.changePgVolume("shop/db", func(v *pgVolume) error {
+		v.Target, v.Current = "/var/lib/postgresql/data", pgMount{Type: "volume", Source: "moin-restore-shop-db-1"}
+		return nil
+	})
+	b.changePgVolume("shopping/db", func(v *pgVolume) error {
+		v.Target, v.Current = "/var/lib/postgresql/data", pgMount{Type: "volume", Source: "moin-restore-shopping-db-1"}
+		return nil
+	})
+	if err := b.retireVolumes("shop"); err != nil {
+		t.Fatal(err)
+	}
+	volumes, _ := b.loadPgVolumes()
+	if _, ok := volumes["shop/db"]; ok || len(volumes) != 2 {
+		t.Fatalf("volumes %v", volumes)
+	}
+	if _, ok := volumes["shopping/db"]; !ok {
+		t.Fatal("another app lost its entry")
+	}
+	compose := filepath.Join(t.TempDir(), "compose.json")
+	saveJSON(compose, map[string]any{"services": map[string]any{"web": map[string]any{}}})
+	if err := b.applyVolumes("shop", compose); err != nil {
+		t.Fatalf("the new app is held to the old one's database: %v", err)
+	}
+}
+
+// TestBreaksLast: a history that lost its place stays lost after the agent
+// restarts, so the window does not reach across the gap.
+func TestBreaksLast(t *testing.T) {
+	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
+	b := newBackups(a, func(protocol.MessageType, string, any) {})
+	k := "postgres:shop/db"
+	state := b.walgState(k)
+	broke := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	state.broke, state.why = broke, walgWhyCap
+	b.saveBreak(k)
+	restarted := newBackups(a, func(protocol.MessageType, string, any) {})
+	if got := restarted.walgState(k); !got.broke.Equal(broke) || got.why != walgWhyCap {
+		t.Fatalf("after a restart: %v %q", got.broke, got.why)
+	}
+}
+
+// TestPrepareSwitch: the restored file gets the live one's mode, is on
+// disk, and the logs around both go.
+func TestPrepareSwitch(t *testing.T) {
+	dir := t.TempDir()
+	live, restored := filepath.Join(dir, "app.db"), filepath.Join(dir, "app.db.moin-restore")
+	os.WriteFile(live, []byte("live"), 0o640)
+	os.WriteFile(restored, []byte("restored"), 0o600)
+	for _, extra := range []string{live + "-wal", live + "-shm", restored + "-wal"} {
+		os.WriteFile(extra, nil, 0o600)
+	}
+	if err := prepareSwitch(restored, live); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(restored)
+	if info.Mode().Perm() != 0o640 {
+		t.Fatalf("mode %v", info.Mode())
+	}
+	for _, extra := range []string{live + "-wal", live + "-shm", restored + "-wal"} {
+		if _, err := os.Stat(extra); err == nil {
+			t.Fatalf("%s is left", extra)
+		}
+	}
+}
+
+// TestRestoresWithoutBucket: how restores stand needs no bucket and no
+// app (backup.restores), where the full list fails.
+func TestRestoresWithoutBucket(t *testing.T) {
+	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
+	b := newBackups(a, func(protocol.MessageType, string, any) {})
+	b.saveMark(restoreMark{ID: "r1", App: "gone", Database: "postgres-db", StartedAt: time.Now()})
+	if _, err := b.list(context.Background(), protocol.BackupRequest{App: "gone"}); err == nil {
+		t.Fatal("a list without a bucket worked")
+	}
+	states := b.restoreStates("gone")
+	if len(states) != 1 || states[0].ID != "r1" || states[0].State != protocol.RestoreRunning {
+		t.Fatalf("states %+v", states)
+	}
+	if states := b.restoreStates("other"); states == nil || len(states) != 0 {
+		t.Fatalf("an app without restores: %#v", states)
 	}
 }

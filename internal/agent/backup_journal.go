@@ -41,8 +41,11 @@ const (
 )
 
 // restoreMark is a restore that runs. Stopped says it stopped the app;
-// Inode (SQLite) is the restored file and Volume (Postgres) the restored
-// volume, which the database is on once the switch happened.
+// Inode (SQLite) is the restored file and Volume (Postgres) the volume it
+// switches to, which the database is on once the switch happened. Built
+// is the volume the restore made, written down before it exists: the
+// only one a restore that did not switch leaves behind. Image is the
+// Postgres image, to look into it.
 type restoreMark struct {
 	ID        string    `json:"id"`
 	App       string    `json:"app"`
@@ -54,6 +57,8 @@ type restoreMark struct {
 	Copy      string    `json:"copy,omitempty"`
 	Inode     uint64    `json:"inode,omitempty"`
 	Volume    string    `json:"volume,omitempty"`
+	Built     string    `json:"built,omitempty"`
+	Image     string    `json:"image,omitempty"`
 }
 
 // restoreRun is one running restore and its mark. keepCopy takes the copy
@@ -261,11 +266,15 @@ func (b *backups) saveSet(name string, set map[string]bool) {
 func (b *backups) recoverRestores(ctx context.Context) {
 	for _, mark := range b.marks() {
 		result := restoreResult{ID: mark.ID, App: mark.App, Database: mark.Database, State: protocol.RestoreFailed, FinishedAt: time.Now().UTC()}
+		switched, switchErr := b.switched(mark)
 		switch {
+		case switchErr != nil:
+			// Nothing guesses where the database runs: the app stays as
+			// it is, applyVolumes refuses to start it.
+			result.Error = "moin cannot tell whether the restore switched the data: " + switchErr.Error()
 		case !mark.Stopped:
 			result.Error = "the agent stopped before the restore changed anything; nothing changed"
 		default:
-			switched := b.switched(mark)
 			if switched && !mark.Postgres {
 				b.mu.Lock()
 				b.clearFirst[filepath.Clean(b.hostPathOf(mark))] = true
@@ -289,22 +298,33 @@ func (b *backups) recoverRestores(ctx context.Context) {
 				result.Error += ". The copy from before is undo-" + mark.Copy + "."
 			}
 		}
+		if switchErr == nil && !switched && mark.Built != "" {
+			b.removeBuilt(ctx, mark.Built, mark.Image)
+		}
 		slog.Warn("backup: a restore the agent stopped in the middle", "app", mark.App, "database", mark.Database, "state", result.State, "error", result.Error)
 		b.saveResult(result)
 		b.dropMark(mark.ID)
 	}
 	b.removeThrowaways(ctx)
+	// The file a SQLite restore built next to the database and never
+	// renamed over it.
+	for _, app := range b.apps.names() {
+		for _, database := range b.apps.runningDatabases(app) {
+			if !database.Postgres() && database.HostPath != "" {
+				removeDatabase(database.HostPath + "." + ourName + "-restore")
+			}
+		}
+	}
 }
 
 // switched says the restore's switch happened: the live SQLite file is
 // the restored one, or the Postgres runs on the restored volume.
-func (b *backups) switched(mark restoreMark) bool {
+func (b *backups) switched(mark restoreMark) (bool, error) {
 	if mark.Postgres {
-		volumes := b.pgVolumes()
-		state, ok := volumes[mark.App+"/"+mark.Service]
-		return ok && mark.Volume != "" && state.Current.Source == mark.Volume
+		state, err := b.pgVolume(mark.App + "/" + mark.Service)
+		return err == nil && mark.Volume != "" && state.Current.Source == mark.Volume, err
 	}
-	return mark.Inode != 0 && inode(b.hostPathOf(mark)) == mark.Inode
+	return mark.Inode != 0 && inode(b.hostPathOf(mark)) == mark.Inode, nil
 }
 
 // hostPathOf is the SQLite file of a mark's database.

@@ -82,6 +82,9 @@ type window struct {
 	since, newest time.Time
 	note          string
 	copies        []protocol.Copy
+	// gaps are spans inside it with no way back (Postgres, after a
+	// switch).
+	gaps []gap
 }
 
 // errNothingYet is a history with nothing in it yet: a check has nothing
@@ -137,6 +140,11 @@ type backups struct {
 	// again.
 	restoring  map[string]bool
 	clearFirst map[string]bool
+	// registering hands SQLite files to Litestream one at a time.
+	registering sync.Mutex
+	// busy keeps Record and a restore of one Postgres apart, by key: a
+	// Record that runs when the restore starts ends first.
+	busy map[string]*sync.Mutex
 	// journal keeps the files of the restore journal whole; see
 	// backup_journal.go.
 	journal sync.Mutex
@@ -159,7 +167,25 @@ func newBackups(a *apps, send func(protocol.MessageType, string, any)) *backups 
 	// A restore that swapped a file before the agent stopped still has
 	// the history from before to clear.
 	b.clearFirst = b.loadSet(clearFirstFile)
+	// A history that lost its place stays lost after a restart.
+	b.loadBreaks()
 	return b
+}
+
+// lockBusy holds the busy lock of a database.
+func (b *backups) lockBusy(k string) func() {
+	b.mu.Lock()
+	if b.busy == nil {
+		b.busy = map[string]*sync.Mutex{}
+	}
+	lock := b.busy[k]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		b.busy[k] = lock
+	}
+	b.mu.Unlock()
+	lock.Lock()
+	return lock.Unlock
 }
 
 // engine is the engine of a database.
@@ -463,6 +489,17 @@ func (b *backups) one(app, database string) (protocol.Database, error) {
 	return databases[0], nil
 }
 
+// backupRestores answers backup.restores (BackupRequest): the restores of
+// the app from the agent's state folder, whatever else stands.
+func (r *runner) backupRestores(message protocol.Message) {
+	var request protocol.BackupRequest
+	if err := message.Decode(&request); err != nil {
+		r.fail(message, err)
+		return
+	}
+	r.send(protocol.TypeBackupsResult, message.RequestID, protocol.Backups{App: request.App, Databases: []protocol.DatabaseBackup{}, Restores: r.backups.restoreStates(request.App)})
+}
+
 // backupList answers backup.list (BackupRequest).
 func (r *runner) backupList(ctx context.Context, message protocol.Message) {
 	var request protocol.BackupRequest
@@ -637,6 +674,9 @@ func (b *backups) runRestore(ctx context.Context, request protocol.BackupRestore
 		b.mu.Unlock()
 		b.reconcile()
 	}()
+	if database.Postgres() {
+		defer b.lockBusy(k)()
+	}
 	e := b.engine(request.App, database)
 	run.keepCopy = func() (string, error) {
 		if b.keepHook != nil {

@@ -1346,6 +1346,11 @@ func (a *apps) remove(ctx context.Context, app string) error {
 	_ = os.Remove(filepath.Join(a.appDir(app), "current"))
 	_ = os.Remove(filepath.Join(a.appDir(app), "app-id"))
 	if a.backups != nil {
+		// An app made again under this name starts on its own volumes;
+		// those of its restores go in 7 days.
+		if err := a.backups.retireVolumes(app); err != nil {
+			slog.Error("backup: forget the volumes of the removed app", "app", app, "error", err)
+		}
 		a.backups.reconcile()
 	}
 	return nil

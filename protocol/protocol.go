@@ -19,7 +19,7 @@ const Version = 2
 // sending it.
 func Needs(messageType MessageType) int {
 	switch messageType {
-	case TypeBackupList, TypeBackupRestore, TypeBackupDownload:
+	case TypeBackupList, TypeBackupRestore, TypeBackupDownload, TypeBackupRestores:
 		return 2
 	}
 	return 1
@@ -84,6 +84,11 @@ const (
 	// before an earlier restore (BackupRestore). The agent answers with
 	// TypeOK or TypeError.
 	TypeBackupRestore MessageType = "backup.restore"
+	// TypeBackupRestores asks how the restores of an app stand
+	// (BackupRequest), without looking into the bucket: also when the app
+	// has no bucket or is gone. The agent answers with TypeBackupsResult,
+	// whose Restores is the answer and Databases empty.
+	TypeBackupRestores MessageType = "backup.restores"
 	// TypeBackupDownload makes a full copy of one database in the bucket's
 	// downloads/ folder (BackupRequest). The agent answers with
 	// TypeBackupFile or TypeError.
