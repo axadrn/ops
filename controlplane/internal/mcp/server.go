@@ -17,7 +17,7 @@ import (
 
 // Version is the version the server reports to MCP clients. Raise it when the
 // tools change.
-const Version = "1.14.0"
+const Version = "1.15.0"
 
 // instructions tell the agent how the tools behave as a whole. Clients pass
 // them to the model when they connect.
