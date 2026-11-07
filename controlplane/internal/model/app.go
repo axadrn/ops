@@ -165,6 +165,35 @@ type BackupMoment struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
+// BackupRestore is a restore the agent of a server runs: running, unknown
+// while the server is offline during it, then done or failed with Error.
+// To is the moment it goes back to, as people read it.
+type BackupRestore struct {
+	ID          string     `db:"id"`
+	WorkspaceID string     `db:"workspace_id"`
+	AppID       string     `db:"app_id"`
+	App         string     `db:"app_name"`
+	Database    string     `db:"database"`
+	To          string     `db:"to_label"`
+	State       string     `db:"state"`
+	Error       string     `db:"error"`
+	StartedAt   time.Time  `db:"started_at"`
+	FinishedAt  *time.Time `db:"finished_at"`
+}
+
+// Active says the restore may still change the data: running, or unknown.
+func (r BackupRestore) Active() bool {
+	return r.State == RestoreRunning || r.State == RestoreUnknown
+}
+
+// The states of a BackupRestore.
+const (
+	RestoreRunning = "running"
+	RestoreUnknown = "unknown"
+	RestoreDone    = "done"
+	RestoreFailed  = "failed"
+)
+
 // Kinds of a BackupMoment; Detail holds the deploy number, the version of
 // an update, or what an edit was: sql, cell, row.
 const (

@@ -91,6 +91,12 @@ func TestBackupsPickTheBucket(t *testing.T) {
 	if !strings.Contains(html.String(), "Restoring app.db to 1 hour ago") || !strings.Contains(html.String(), `hx-select="#db-backups"`) {
 		t.Errorf("a running restore: %s", html.String())
 	}
+	view.Restore = &service.Restore{State: service.RestoreUnknown, To: "1 hour ago"}
+	html.Reset()
+	DatabaseBackups(view, "/data/app.db").Render(ctx, &html)
+	if !strings.Contains(html.String(), "Restoring app.db to 1 hour ago") || !strings.Contains(html.String(), "The server is offline") {
+		t.Errorf("a restore whose server went offline: %s", html.String())
+	}
 	finished := now.Add(-time.Minute)
 	view.Restore = &service.Restore{State: service.RestoreFailed, To: "Before v12", Error: "swap the data: disk full", FinishedAt: &finished}
 	html.Reset()

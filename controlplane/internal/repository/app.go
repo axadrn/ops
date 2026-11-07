@@ -12,6 +12,7 @@ import (
 
 var (
 	ErrAppNotFound      = errors.New("app not found")
+	ErrRestoreNotFound  = errors.New("restore not found")
 	ErrDuplicateApp     = errors.New("app name already exists")
 	ErrDeployNotFound   = errors.New("deploy not found")
 	ErrRegistryNotFound = errors.New("registry not found")
@@ -299,6 +300,56 @@ func (r *Apps) BackupMoments(appID string, since time.Time) ([]model.BackupMomen
 	moments := []model.BackupMoment{}
 	err := r.db.Select(&moments, `SELECT * FROM backup_moments WHERE app_id = $1 AND at >= $2 ORDER BY at DESC, id DESC`, appID, since.UTC())
 	return moments, err
+}
+
+// AddRestore stores a new restore and forgets those older than before.
+func (r *Apps) AddRestore(restore model.BackupRestore, before time.Time) error {
+	_, err := r.db.Exec(`INSERT INTO backup_restores (id, workspace_id, app_id, app_name, database, to_label, state, error, started_at, finished_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		restore.ID, restore.WorkspaceID, restore.AppID, restore.App, restore.Database, restore.To, restore.State, restore.Error, restore.StartedAt.UTC(), restore.FinishedAt)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(`DELETE FROM backup_restores WHERE app_id = $1 AND started_at < $2`, restore.AppID, before.UTC())
+	return err
+}
+
+// SetRestore stores how a restore stands now.
+func (r *Apps) SetRestore(restore model.BackupRestore) error {
+	_, err := r.db.Exec(`UPDATE backup_restores SET database = $1, to_label = $2, state = $3, error = $4, finished_at = $5 WHERE id = $6`,
+		restore.Database, restore.To, restore.State, restore.Error, restore.FinishedAt, restore.ID)
+	return err
+}
+
+// DeleteRestore forgets a restore that never started.
+func (r *Apps) DeleteRestore(id string) error {
+	_, err := r.db.Exec(`DELETE FROM backup_restores WHERE id = $1`, id)
+	return err
+}
+
+// Restore is one restore by its ID; ErrRestoreNotFound without it.
+func (r *Apps) Restore(id string) (*model.BackupRestore, error) {
+	var restore model.BackupRestore
+	err := r.db.Get(&restore, `SELECT * FROM backup_restores WHERE id = $1`, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrRestoreNotFound
+	}
+	return &restore, err
+}
+
+// Restores are the restores of an app, newest first.
+func (r *Apps) Restores(appID string) ([]model.BackupRestore, error) {
+	restores := []model.BackupRestore{}
+	err := r.db.Select(&restores, `SELECT * FROM backup_restores WHERE app_id = $1 ORDER BY started_at DESC`, appID)
+	return restores, err
+}
+
+// ActiveRestoresOn are the restores on a server that may still run.
+func (r *Apps) ActiveRestoresOn(serverID string) ([]model.BackupRestore, error) {
+	restores := []model.BackupRestore{}
+	err := r.db.Select(&restores, `SELECT r.* FROM backup_restores r JOIN apps a ON a.id = r.app_id
+		WHERE a.server_id = $1 AND r.state IN ('running', 'unknown') ORDER BY r.started_at`, serverID)
+	return restores, err
 }
 
 func (r *Apps) BackupStatus(appID string) ([]model.BackupStatus, error) {

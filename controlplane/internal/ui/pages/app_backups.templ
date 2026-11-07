@@ -277,10 +277,15 @@ func momentTime(at, now time.Time) string {
 // hour.
 templ backupRestore(view BackupsView, database string) {
 	{{ restore := view.Restore }}
-	if restore != nil && restore.State == service.RestoreRunning {
+	if restore != nil && restore.Active() {
 		@kit.RowControl(templ.Attributes{"hx-get": databaseURL(ctx, view.App.Name, database), "hx-trigger": "apps from:body", "hx-select": "#db-backups", "hx-target": "#db-backups", "hx-swap": "outerHTML", "data-restore-running": true}) {
 			@kit.Dot(kit.StateRunning)
-			<span class="min-w-0 flex-1 truncate font-medium">Restoring { databaseName(database) } to { lowerFirst(restore.To) }</span>
+			<div class="min-w-0 flex-1">
+				<div class="truncate font-medium">Restoring { databaseName(database) } to { lowerFirst(restore.To) }</div>
+				if restore.State == service.RestoreUnknown {
+					<div class="text-sm text-muted-foreground" data-restore-unknown>The server is offline; moin asks it how the restore went when it is back.</div>
+				}
+			</div>
 		}
 	} else if restore != nil && restore.State == service.RestoreFailed {
 		@kit.RowControl(templ.Attributes{"data-restore-failed": true}) {

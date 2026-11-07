@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -211,7 +212,9 @@ func TestRestoreRunsOnItsOwn(t *testing.T) {
 		t.Fatalf("failed: %+v", failed)
 	}
 
-	// The agent goes offline in the middle: the restore says so at once.
+	// The agent goes offline in the middle: the restore is unknown, not
+	// failed, and blocks another restore of the app until the agent says
+	// how it ended.
 	agent.mu.Lock()
 	agent.sent = nil
 	agent.mu.Unlock()
@@ -225,9 +228,90 @@ func TestRestoreRunsOnItsOwn(t *testing.T) {
 			t.Fatal("the agent got no restore")
 		}
 	}
-	servers.Connect(server, testHello, "203.0.113.5", func() {}, func(protocol.Message) error { return nil })
-	if gone := waitRestore(t, apps, restore.ID, RestoreFailed); !strings.Contains(gone.Error, "went offline") {
+	// The agent that is back answers every list with what it knows of the
+	// restores.
+	// It does not answer until the control plane restarted.
+	var says sync.Mutex
+	answers := false
+	knows := protocol.Backups{App: "shop", Restores: []protocol.RestoreState{{ID: restore.ID, Database: "/data/app.db", State: protocol.RestoreRunning}}}
+	servers.Connect(server, testHello, "203.0.113.5", func() {}, func(message protocol.Message) error {
+		says.Lock()
+		answer := answers
+		says.Unlock()
+		if message.Type == protocol.TypeBackupList && answer {
+			says.Lock()
+			reply, _ := protocol.NewMessage(protocol.TypeBackupsResult, knows)
+			says.Unlock()
+			reply.RequestID = message.RequestID
+			go servers.Receive(server.ID, reply)
+		}
+		return nil
+	})
+	if gone := waitRestore(t, apps, restore.ID, RestoreUnknown); !strings.Contains(gone.Error, "went offline") || gone.FinishedAt != nil {
 		t.Fatalf("gone: %+v", gone)
+	}
+	if _, err := apps.StartRestore(ctx, owner, "shop", RestoreTarget{Moment: "1h"}); !errors.Is(err, ErrRestoreRunning) {
+		t.Fatalf("a restore while one is unknown: %v", err)
+	}
+
+	// The control plane restarts: the restore is still there, and the
+	// agent that is back says it still runs, then that it is done.
+	restarted := NewAppService(apps.apps, servers, apps.box)
+	if kept, err := restarted.RestoreOf(owner.WorkspaceID, "shop", restore.ID); err != nil || kept.State != RestoreUnknown {
+		t.Fatalf("after a restart: %+v %v", kept, err)
+	}
+	says.Lock()
+	answers = true
+	says.Unlock()
+	restarted.reconcileRestores(server.ID)
+	if still, _ := restarted.RestoreOf(owner.WorkspaceID, "shop", restore.ID); still.State != RestoreRunning {
+		t.Fatalf("the agent says it runs: %+v", still)
+	}
+	finished := time.Now().UTC()
+	agentSays(t, servers, server.ID, protocol.TypeBackupStatus, protocol.Backups{App: "shop", Restores: []protocol.RestoreState{{ID: restore.ID, Database: "/data/app.db", State: protocol.RestoreDone, FinishedAt: &finished}}})
+	if done := waitRestore(t, restarted, restore.ID, RestoreDone); done.FinishedAt == nil {
+		t.Fatalf("done: %+v", done)
+	}
+	// A late word changes nothing once it ended.
+	agentSays(t, servers, server.ID, protocol.TypeBackupStatus, protocol.Backups{App: "shop", Restores: []protocol.RestoreState{{ID: restore.ID, State: protocol.RestoreFailed, Error: "late"}}})
+	if done, _ := restarted.RestoreOf(owner.WorkspaceID, "shop", restore.ID); done.State != RestoreDone {
+		t.Fatalf("a late word: %+v", done)
+	}
+
+	// One the agent knows nothing of never started there.
+	lost := &Restore{ID: "lost", WorkspaceID: owner.WorkspaceID, AppID: restore.AppID, App: "shop", State: RestoreUnknown, StartedAt: time.Now().UTC()}
+	if err := apps.apps.AddRestore(*lost, time.Now().Add(-keepRestores)); err != nil {
+		t.Fatal(err)
+	}
+	says.Lock()
+	knows = protocol.Backups{App: "shop"}
+	says.Unlock()
+	restarted.reconcileRestores(server.ID)
+	if gone, _ := restarted.RestoreOf(owner.WorkspaceID, "shop", "lost"); gone.State != RestoreFailed || !strings.Contains(gone.Error, "knows nothing") {
+		t.Fatalf("an unknown restore: %+v", gone)
+	}
+}
+
+// TestOneRestoreAtATime: two restores of one app asked at the same moment
+// never both start.
+func TestOneRestoreAtATime(t *testing.T) {
+	apps, servers, server, agent := newAppService(t)
+	if _, err := apps.Create(owner, "shop", "web-1"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	since := now.Add(-3 * time.Hour)
+	backupAgent(t, apps, servers, server, agent, protocol.DatabaseBackup{Database: "/data/app.db", Since: &since, ReplicatedAt: &now})
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := apps.StartRestore(context.Background(), owner, "shop", RestoreTarget{Moment: "1h"})
+			results <- err
+		}()
+	}
+	first, second := <-results, <-results
+	if (first == nil) == (second == nil) || !errors.Is(first, ErrRestoreRunning) && !errors.Is(second, ErrRestoreRunning) {
+		t.Fatalf("two restores at once: %v, %v", first, second)
 	}
 }
 

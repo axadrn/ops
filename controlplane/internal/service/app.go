@@ -89,8 +89,10 @@ type AppService struct {
 	// updates the catalog version each running update deploy brings.
 	downloads map[string]*Download
 	updates   map[string]string
-	// restores are the restores that run or ran in the last day, by ID.
-	restores map[string]*Restore
+	// waiting are the restores this control plane waits for the agent's
+	// answer to; restoreMu keeps reserving and ending restores apart.
+	waiting   map[string]bool
+	restoreMu sync.Mutex
 }
 
 // liveDeploy is a running deploy: its lines so far and who follows them.
@@ -120,6 +122,7 @@ func NewAppService(apps *repository.Apps, servers *ServerService, box *secret.Bo
 			service.configureAgent(serverID, workspaceID)
 		}
 		service.configureServerOnConnect(serverID, workspaceID)
+		service.reconcileRestores(serverID)
 	})
 	return service
 }

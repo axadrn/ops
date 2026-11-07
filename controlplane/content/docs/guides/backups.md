@@ -105,6 +105,8 @@ In moin this database is `postgres-db` (`postgres-<service>`): in the bucket, in
 
 - A restore replaces the live data, so moin asks you to type the app's name first, on the web, in the CLI and in the TUI. `--yes` skips it in scripts; an agent passes the name as `confirm`.
 - After a restore of a SQLite file its history starts again from the restored file; the copy before the restore is the way back.
+- A restore needs room on the server's disk: twice the database's size for Postgres (the restored data and its copy next to the live data), twice the file's size for SQLite. Without it the restore says so before it changes anything.
+- A restore goes on when the server goes offline or the control plane restarts in the middle: it shows as "the server is offline", no other restore of the app starts meanwhile, and the agent tells how it ended when it is back. An agent that stops in the middle (a reboot) ends the restore when it starts again: the app runs again, or stays stopped on half new data, and the restore says so.
 - A restore that fails says why and names the copy before it, `undo-…`, when moin took one. If the swap of a Postgres stops halfway, the app stays stopped, so nothing writes to half the data, and the restored data stays in a volume the message names. Postgres keeps its whole history across restores.
 - When an app moves to another bucket, its history starts again there.
 - Removing the bucket from moin stops its backups; what is in it stays. See [Remove a bucket](/docs/guides/bucket#remove-a-bucket).

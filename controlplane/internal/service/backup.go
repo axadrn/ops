@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/axadrn/moin/controlplane/internal/model"
+	"github.com/axadrn/moin/controlplane/internal/repository"
 	"github.com/axadrn/moin/internal/build"
 	"github.com/axadrn/moin/protocol"
 )
@@ -428,6 +429,7 @@ func (s *AppService) backups(ctx context.Context, app *model.App) ([]DatabaseBac
 		return nil, err
 	}
 	s.storeBackupStatus(app, backups)
+	s.applyRestoreStates(app, backups.Restores)
 	now := s.now().UTC()
 	remembered, err := s.apps.BackupMoments(app.ID, now.Add(-keepMoments))
 	if err != nil {
@@ -450,31 +452,28 @@ type RestoreTarget struct {
 }
 
 // Restore is a restore the agent runs. It runs on its own, as a big
-// database takes longer than a request lasts: RestoreOf says how it
-// stands. To is the moment it goes back to, as people read it.
-type Restore struct {
-	ID          string
-	App         string
-	Database    string
-	To          string
-	State       string
-	Error       string
-	StartedAt   time.Time
-	FinishedAt  *time.Time
-	workspaceID string
-}
+// database takes longer than a request lasts, and across sessions and
+// restarts of the control plane: RestoreOf says how it stands. It is kept
+// in the database a week.
+type Restore = model.BackupRestore
 
-// Restore states.
+// Restore states. Unknown is a restore whose server went offline during
+// it: the agent tells how it ended when it is back, and until then no
+// other restore of the app starts.
 const (
-	RestoreRunning = "running"
-	RestoreDone    = "done"
-	RestoreFailed  = "failed"
+	RestoreRunning = model.RestoreRunning
+	RestoreUnknown = model.RestoreUnknown
+	RestoreDone    = model.RestoreDone
+	RestoreFailed  = model.RestoreFailed
 )
+
+// keepRestores is how long a restore's record stays.
+const keepRestores = 7 * 24 * time.Hour
 
 // StartRestore puts a database of an app back to a moment. The agent takes
 // one full copy of it as it is first, which keeps 7 days: going back to it
-// undoes the restore. It checks the moment, then the agent runs the
-// restore on its own; RestoreOf follows it.
+// undoes the restore. It reserves the restore, checks the moment, then the
+// agent runs the restore on its own; RestoreOf follows it.
 func (s *AppService) StartRestore(ctx context.Context, actor Actor, idOrName string, target RestoreTarget) (*Restore, error) {
 	if strings.TrimSpace(target.Moment) == "" && target.At == nil {
 		return nil, ErrRestoreTarget
@@ -483,50 +482,152 @@ func (s *AppService) StartRestore(ctx context.Context, actor Actor, idOrName str
 	if err != nil {
 		return nil, err
 	}
-	if running := s.runningRestore(app); running != nil {
-		return nil, ErrRestoreRunning
-	}
-	request, label, err := s.restoreRequest(ctx, app, target)
+	restore, err := s.reserveRestore(app, target.Database)
 	if err != nil {
 		return nil, err
 	}
-	restore := &Restore{ID: randomToken()[:16], App: app.Name, Database: request.Database, To: label, State: RestoreRunning, StartedAt: s.now().UTC(), workspaceID: app.WorkspaceID}
-	s.mu.Lock()
-	if s.restores == nil {
-		s.restores = map[string]*Restore{}
-	}
-	for id, old := range s.restores {
-		if s.now().Sub(old.StartedAt) > downloadKeep && old.State != RestoreRunning {
-			delete(s.restores, id)
+	request, label, err := s.restoreRequest(ctx, app, target)
+	if err != nil {
+		if deleteErr := s.apps.DeleteRestore(restore.ID); deleteErr != nil {
+			slog.Error("forget a restore that never started", "id", restore.ID, "error", deleteErr)
 		}
+		return nil, err
 	}
-	s.restores[restore.ID] = restore
-	s.mu.Unlock()
+	request.ID = restore.ID
+	restore.Database, restore.To = request.Database, label
+	if err := s.apps.SetRestore(*restore); err != nil {
+		return nil, err
+	}
 	s.notify(app.WorkspaceID)
+	s.mu.Lock()
+	if s.waiting == nil {
+		s.waiting = map[string]bool{}
+	}
+	s.waiting[restore.ID] = true
+	s.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), restoreTimeout)
 		defer cancel()
 		err := s.servers.Request(ctx, app.ServerID, protocol.TypeBackupRestore, request, nil)
-		finished := s.now().UTC()
 		s.mu.Lock()
-		restore.FinishedAt = &finished
-		if err != nil {
-			restore.State, restore.Error = RestoreFailed, errorText(err)
-		} else {
-			restore.State = RestoreDone
-		}
+		delete(s.waiting, restore.ID)
 		s.mu.Unlock()
-		if err == nil {
-			slog.Info("database restored", "app_id", app.ID, "database", request.Database, "at", request.At, "copy", request.Copy)
-			details := map[string]string{"database": request.Database, "to": label}
-			if request.At != nil {
-				details["at"] = request.At.Format(time.RFC3339)
-			}
-			s.servers.record(actor, "backup.restored", "app", app.Name, details)
+		switch {
+		case errors.Is(err, ErrAgentGone) || errors.Is(err, context.DeadlineExceeded):
+			// The agent goes on with it: it tells how it ended when it is
+			// back (reconcileRestores).
+			s.endRestore(actor, app, restore.ID, protocol.RestoreState{State: RestoreUnknown, Error: "the server went offline during the restore; moin asks it how it ended when it is back"})
+		case err != nil:
+			s.endRestore(actor, app, restore.ID, protocol.RestoreState{State: RestoreFailed, Error: errorText(err)})
+		default:
+			s.endRestore(actor, app, restore.ID, protocol.RestoreState{State: RestoreDone})
 		}
-		s.notify(app.WorkspaceID)
 	}()
-	return s.restoreCopy(restore), nil
+	copied := *restore
+	return &copied, nil
+}
+
+// reserveRestore stores a new restore of an app unless one may still run:
+// two at once would race for the data.
+func (s *AppService) reserveRestore(app *model.App, database string) (*Restore, error) {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
+	restores, err := s.apps.Restores(app.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, restore := range restores {
+		if restore.Active() {
+			return nil, ErrRestoreRunning
+		}
+	}
+	restore := &Restore{ID: randomToken()[:16], WorkspaceID: app.WorkspaceID, AppID: app.ID, App: app.Name, Database: database, State: RestoreRunning, StartedAt: s.now().UTC()}
+	if err := s.apps.AddRestore(*restore, s.now().Add(-keepRestores)); err != nil {
+		return nil, err
+	}
+	return restore, nil
+}
+
+// endRestore stores how a restore stands after the agent said so. A
+// restore that ended stays ended: a late word changes nothing.
+func (s *AppService) endRestore(actor Actor, app *model.App, id string, state protocol.RestoreState) {
+	s.restoreMu.Lock()
+	restore, err := s.apps.Restore(id)
+	if err != nil || !restore.Active() || restore.AppID != app.ID {
+		s.restoreMu.Unlock()
+		return
+	}
+	if state.State == RestoreRunning && restore.State == RestoreRunning {
+		s.restoreMu.Unlock()
+		return
+	}
+	restore.State, restore.Error = state.State, clipText(state.Error, 2000)
+	if state.State == RestoreDone || state.State == RestoreFailed {
+		finished := s.now().UTC()
+		if state.FinishedAt != nil {
+			finished = state.FinishedAt.UTC()
+		}
+		restore.FinishedAt = &finished
+	}
+	err = s.apps.SetRestore(*restore)
+	s.restoreMu.Unlock()
+	if err != nil {
+		slog.Error("store how a restore stands failed", "id", id, "error", err)
+		return
+	}
+	if state.State == RestoreDone {
+		slog.Info("database restored", "app_id", app.ID, "database", restore.Database, "to", restore.To)
+		s.servers.record(actor, "backup.restored", "app", app.Name, map[string]string{"database": restore.Database, "to": restore.To})
+	}
+	s.notify(app.WorkspaceID)
+}
+
+// applyRestoreStates takes what an agent says of the restores of an app:
+// those that run, and how the last one of each database ended.
+func (s *AppService) applyRestoreStates(app *model.App, states []protocol.RestoreState) {
+	for _, state := range states {
+		if state.ID == "" {
+			continue
+		}
+		s.endRestore(System(app.WorkspaceID), app, state.ID, state)
+	}
+}
+
+// reconcileRestores asks the agent of a server that just connected how
+// the restores stand that the control plane lost track of: those whose
+// server went offline during them, and those that ran when the control
+// plane restarted. One the agent knows nothing of never started there.
+func (s *AppService) reconcileRestores(serverID string) {
+	restores, err := s.apps.ActiveRestoresOn(serverID)
+	if err != nil {
+		slog.Error("list the restores to reconcile failed", "server_id", serverID, "error", err)
+		return
+	}
+	for _, restore := range restores {
+		s.mu.Lock()
+		waited := s.waiting[restore.ID]
+		s.mu.Unlock()
+		if waited {
+			continue
+		}
+		app, err := s.apps.ByID(restore.AppID)
+		if err != nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
+		var backups protocol.Backups
+		err = s.servers.Request(ctx, serverID, protocol.TypeBackupList, protocol.BackupRequest{App: app.Name}, &backups)
+		cancel()
+		if err != nil && len(backups.Restores) == 0 {
+			slog.Warn("ask how a restore stands failed", "id", restore.ID, "error", err)
+			continue
+		}
+		s.applyRestoreStates(app, backups.Restores)
+		known := slices.ContainsFunc(backups.Restores, func(state protocol.RestoreState) bool { return state.ID == restore.ID })
+		if !known {
+			s.endRestore(System(app.WorkspaceID), app, restore.ID, protocol.RestoreState{State: RestoreFailed, Error: "the server knows nothing of this restore: it never started there; the data is as it was"})
+		}
+	}
 }
 
 // RestoreOf is a restore of an app by its ID.
@@ -535,13 +636,11 @@ func (s *AppService) RestoreOf(workspaceID, idOrName, id string) (*Restore, erro
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	restore := s.restores[id]
-	s.mu.Unlock()
-	if restore == nil || restore.workspaceID != workspaceID || restore.App != app.Name {
+	restore, err := s.apps.Restore(id)
+	if errors.Is(err, repository.ErrRestoreNotFound) || err == nil && (restore.WorkspaceID != workspaceID || restore.AppID != app.ID) {
 		return nil, ErrRestoreNotFound
 	}
-	return s.restoreCopy(restore), nil
+	return restore, err
 }
 
 // LatestRestore is the newest restore of a database of an app from the
@@ -552,38 +651,16 @@ func (s *AppService) LatestRestore(workspaceID, idOrName, database string) (*Res
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var newest *Restore
-	for _, restore := range s.restores {
-		if restore.workspaceID == workspaceID && restore.App == app.Name && (database == "" || restore.Database == database) && s.now().Sub(restore.StartedAt) < downloadKeep && (newest == nil || restore.StartedAt.After(newest.StartedAt)) {
-			newest = restore
+	restores, err := s.apps.Restores(app.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, restore := range restores {
+		if (database == "" || restore.Database == database) && (restore.Active() || s.now().Sub(restore.StartedAt) < 24*time.Hour) {
+			return &restore, nil
 		}
 	}
-	if newest == nil {
-		return nil, nil
-	}
-	copied := *newest
-	return &copied, nil
-}
-
-// runningRestore is the restore of an app that runs now, or nil.
-func (s *AppService) runningRestore(app *model.App) *Restore {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, restore := range s.restores {
-		if restore.workspaceID == app.WorkspaceID && restore.App == app.Name && restore.State == RestoreRunning {
-			return restore
-		}
-	}
-	return nil
-}
-
-func (s *AppService) restoreCopy(restore *Restore) *Restore {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	copied := *restore
-	return &copied
+	return nil, nil
 }
 
 // restoreRequest checks where a restore goes and says it as people read
@@ -869,6 +946,7 @@ func (s *AppService) receiveBackupStatus(serverID string, backups protocol.Backu
 		return
 	}
 	s.storeBackupStatus(app, backups)
+	s.applyRestoreStates(app, backups.Restores)
 	s.notify(workspaceID)
 }
 
