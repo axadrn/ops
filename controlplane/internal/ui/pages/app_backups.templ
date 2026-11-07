@@ -23,6 +23,8 @@ type BackupsView struct {
 	Older     []service.Bucket
 	Databases []service.DatabaseBackups
 	Download  *service.Download
+	// Restore is the newest restore of the open database of the last day.
+	Restore *service.Restore
 	// Error says why the server could not report its backups.
 	Error string
 	Now   time.Time
@@ -143,6 +145,7 @@ templ DatabaseBackups(view BackupsView, database string) {
 			@kit.Section("Backups", nil) {
 				@kit.List() {
 					@backupState(backup, known, database, view.Now)
+					@backupRestore(view, database)
 					if backup.Note != "" {
 						@kit.RowControl(templ.Attributes{"data-backup-note": true}) {
 							<p class="min-w-0 flex-1 text-sm break-words text-muted-foreground">{ backup.Note }</p>
@@ -269,6 +272,43 @@ func momentTime(at, now time.Time) string {
 // backupDownload is the row to download a full copy of the database: the
 // button, then while the copy is made that it runs, then the link. The
 // copy goes to the user's own bucket, the link points there.
+// backupRestore is how the newest restore stands: running, which follows
+// the app's changes until it ends, then failed with why, or done for an
+// hour.
+templ backupRestore(view BackupsView, database string) {
+	{{ restore := view.Restore }}
+	if restore != nil && restore.State == service.RestoreRunning {
+		@kit.RowControl(templ.Attributes{"hx-get": databaseURL(ctx, view.App.Name, database), "hx-trigger": "apps from:body", "hx-select": "#db-backups", "hx-target": "#db-backups", "hx-swap": "outerHTML", "data-restore-running": true}) {
+			@kit.Dot(kit.StateRunning)
+			<span class="min-w-0 flex-1 truncate font-medium">Restoring { databaseName(database) } to { lowerFirst(restore.To) }</span>
+		}
+	} else if restore != nil && restore.State == service.RestoreFailed {
+		@kit.RowControl(templ.Attributes{"data-restore-failed": true}) {
+			@kit.Dot(kit.StateFailed)
+			<div class="min-w-0 flex-1">
+				<div class="font-medium text-failed">The restore to { lowerFirst(restore.To) } failed</div>
+				<details class="text-sm text-muted-foreground">
+					<summary class="cursor-pointer list-none py-1 outline-none hover:text-foreground focus-visible:text-foreground [&::-webkit-details-marker]:hidden">Show details</summary>
+					<p class="font-mono text-xs break-words">{ restore.Error }</p>
+				</details>
+			</div>
+		}
+	} else if restore != nil && restore.FinishedAt != nil && view.Now.Sub(*restore.FinishedAt) < time.Hour {
+		@kit.RowControl(templ.Attributes{"data-restore-done": true}) {
+			<span class="min-w-0 flex-1 truncate text-muted-foreground">Restored to { lowerFirst(restore.To) } { human.Ago(*restore.FinishedAt, view.Now) }</span>
+		}
+	}
+}
+
+// lowerFirst starts a label in the middle of a sentence: "1 hour ago",
+// "before v12".
+func lowerFirst(label string) string {
+	if label == "" {
+		return label
+	}
+	return strings.ToLower(label[:1]) + label[1:]
+}
+
 templ backupDownload(view BackupsView, database string) {
 	{{ appPath := ctxkeys.AppBasePath(ctx) + "/apps/" + view.App.Name }}
 	{{ download := view.Download }}

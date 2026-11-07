@@ -27,12 +27,12 @@ func runWithStdin(t *testing.T, api *fakeAPI, stdin string, args ...string) (cod
 func TestBuckets(t *testing.T) {
 	clientA := `{"name":"client-a","endpoint":"https://s3.example.com","region":"auto","bucket":"client","path":"","access_key":"AKIA1","apps":["shop"]}`
 	api := &fakeAPI{answers: map[string]string{
-		"POST /api/v1/buckets":           clientA,
-		"GET /api/v1/buckets":            `{"items":[{"name":"main","default":true,"bucket":"main","folder":"ws/","access_key":"AKIA0","apps":["blog"],"older_backups":["shop"]},` + clientA + `]}`,
-		"GET /api/v1/buckets/client-a":   clientA,
-		"PUT /api/v1/buckets/client-a":   clientA,
-		"PUT /api/v1/apps/shop/bucket":   `{"name":"shop","bucket":"client-a"}`,
-		"POST /api/v1/apps/shop/restore": ``,
+		"POST /api/v1/buckets":            clientA,
+		"GET /api/v1/buckets":             `{"items":[{"name":"main","default":true,"bucket":"main","folder":"ws/","access_key":"AKIA0","apps":["blog"],"older_backups":["shop"]},` + clientA + `]}`,
+		"GET /api/v1/buckets/client-a":    clientA,
+		"PUT /api/v1/buckets/client-a":    clientA,
+		"PUT /api/v1/apps/shop/bucket":    `{"name":"shop","bucket":"client-a"}`,
+		"POST /api/v1/apps/shop/restores": `{"id":"r1","state":"done"}`,
 	}}
 
 	code, stdout, stderr := runWithStdin(t, api, "the-secret\n", "buckets", "add", "client-a", "--endpoint", "https://s3.example.com", "--bucket", "client", "--access-key", "AKIA1")
@@ -67,11 +67,11 @@ func TestBuckets(t *testing.T) {
 	}
 
 	code, _, stderr = runCLI(t, api, "restore", "shop", "--to", "Before v12", "--yes")
-	if code != 0 || !api.seen(`POST /api/v1/apps/shop/restore {"database":"","moment":"Before v12"}`) {
+	if code != 0 || !api.seen(`POST /api/v1/apps/shop/restores {"database":"","moment":"Before v12"}`) {
 		t.Errorf("restore to a moment: code %d, stderr %q, requests %v", code, stderr, api.requests)
 	}
 	code, _, stderr = runCLI(t, api, "restore", "--app", "shop", "--to", "2026-11-07 14:01", "--db", "/data/app.db", "--yes")
-	if code != 0 || !api.seen(`POST /api/v1/apps/shop/restore {"at":"2026-11-07T14:01:00Z","database":"/data/app.db"}`) {
+	if code != 0 || !api.seen(`POST /api/v1/apps/shop/restores {"at":"2026-11-07T14:01:00Z","database":"/data/app.db"}`) {
 		t.Errorf("restore to a time: code %d, stderr %q, requests %v", code, stderr, api.requests)
 	}
 

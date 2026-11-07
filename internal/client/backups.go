@@ -150,6 +150,8 @@ func (c *Client) Backups(ctx context.Context, app string) (AppBackups, error) {
 
 // Restore puts a database back to a moment from Backups, by its ID or
 // label, or to a time in its history.
+// It waits until the agent is done: a restore runs on its own on the
+// control plane, as a big database takes a while.
 func (c *Client) Restore(ctx context.Context, app, database, moment string, at *time.Time) error {
 	body := map[string]any{"database": database}
 	if moment != "" {
@@ -158,7 +160,36 @@ func (c *Client) Restore(ctx context.Context, app, database, moment string, at *
 	if at != nil {
 		body["at"] = at.UTC()
 	}
-	return c.do(ctx, http.MethodPost, appPath(app, "restore"), body, nil)
+	var restore Restore
+	if err := c.do(ctx, http.MethodPost, appPath(app, "restores"), body, &restore); err != nil {
+		return err
+	}
+	for restore.State == "running" {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(restorePoll):
+		}
+		if err := c.do(ctx, http.MethodGet, appPath(app, "restores/"+url.PathEscape(restore.ID)), nil, &restore); err != nil {
+			return err
+		}
+	}
+	if restore.State != "done" {
+		return fmt.Errorf("the restore failed: %s", restore.Error)
+	}
+	return nil
+}
+
+// restorePoll is how often Restore asks how a restore stands.
+var restorePoll = time.Second
+
+// Restore is a restore the agent runs: running, then done or failed.
+type Restore struct {
+	ID       string `json:"id"`
+	Database string `json:"database"`
+	To       string `json:"to"`
+	State    string `json:"state"`
+	Error    string `json:"error"`
 }
 
 // StartDownload has the agent make a full copy of a database in the app's

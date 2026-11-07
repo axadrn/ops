@@ -41,13 +41,13 @@ func TestMoments(t *testing.T) {
 	// A day of history offers yesterday too; an update says its version.
 	since = now.Add(-25 * time.Hour)
 	moments := Moments(backup, remembered, now)
-	if _, ok := findMoment(moments, "yesterday this time"); !ok {
+	if _, err := findMoment(moments, "yesterday this time"); err != nil {
 		t.Error("no yesterday with a day of history")
 	}
-	if moment, ok := findMoment(moments, "BEFORE V11"); ok || moment.ID != "" {
+	if _, err := findMoment(moments, "BEFORE V11"); !errors.Is(err, ErrMoment) {
 		t.Error("an update reads as a plain deploy")
 	}
-	if moment, ok := findMoment(moments, "before the update to 3.4.1"); !ok || moment.ID != "before-v11" {
+	if moment, err := findMoment(moments, "before the update to 3.4.1"); err != nil || moment.ID != "before-v11" {
 		t.Errorf("update moment %+v", moment)
 	}
 
@@ -113,22 +113,19 @@ func TestRestoreToMoments(t *testing.T) {
 		agent.sent = nil
 		agent.mu.Unlock()
 		backupAgent(t, apps, servers, server, agent, backup)
-		done := make(chan error, 1)
-		go func() { done <- apps.Restore(ctx, owner, "shop", target) }()
 		var sent protocol.BackupRestore
-		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-			select {
-			case err := <-done:
-				return sent, err
-			default:
-			}
-			if agent.count(protocol.TypeBackupRestore) > 0 {
-				agent.last(t, protocol.TypeBackupRestore, &sent)
-				agentAnswers(servers, server.ID, agent, protocol.TypeBackupRestore, protocol.TypeOK, nil)
-				return sent, <-done
+		started, err := apps.StartRestore(ctx, owner, "shop", target)
+		if err != nil {
+			return sent, err
+		}
+		for deadline := time.Now().Add(5 * time.Second); agent.count(protocol.TypeBackupRestore) == 0; time.Sleep(time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatal("the agent got no restore")
 			}
 		}
-		t.Fatal("no answer")
+		agent.last(t, protocol.TypeBackupRestore, &sent)
+		agentAnswers(servers, server.ID, agent, protocol.TypeBackupRestore, protocol.TypeOK, nil)
+		waitRestore(t, apps, started.ID, RestoreDone)
 		return sent, nil
 	}
 
@@ -162,6 +159,109 @@ func TestRestoreToMoments(t *testing.T) {
 	}
 	if _, err := restore(RestoreTarget{Database: "/data/other.db", Moment: "1h"}); !errors.Is(err, ErrNoDatabase) {
 		t.Fatalf("another database: %v", err)
+	}
+}
+
+// waitRestore waits until a restore of shop is in state.
+func waitRestore(t *testing.T, apps *AppService, id, state string) *Restore {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		restore, err := apps.RestoreOf(owner.WorkspaceID, "shop", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if restore.State == state {
+			return restore
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("restore %+v, want %s", restore, state)
+		}
+	}
+}
+
+// TestRestoreRunsOnItsOwn: a restore answers at once and runs until the
+// agent is done, longer than any request lasts; a second one waits for
+// it, a failure says why, and another workspace never sees it.
+func TestRestoreRunsOnItsOwn(t *testing.T) {
+	apps, servers, server, agent := newAppService(t)
+	if _, err := apps.Create(owner, "shop", "web-1"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	since := now.Add(-3 * time.Hour)
+	backup := protocol.DatabaseBackup{Database: "/data/app.db", Since: &since, ReplicatedAt: &now}
+	ctx := context.Background()
+	backupAgent(t, apps, servers, server, agent, backup)
+	restore, err := apps.StartRestore(ctx, owner, "shop", RestoreTarget{Moment: "1h"})
+	if err != nil || restore.State != RestoreRunning || restore.To != "1 hour ago" || restore.Database != "/data/app.db" {
+		t.Fatalf("start: %+v %v", restore, err)
+	}
+	if latest, err := apps.LatestRestore(owner.WorkspaceID, "shop", "/data/app.db"); err != nil || latest == nil || latest.ID != restore.ID {
+		t.Fatalf("latest: %+v %v", latest, err)
+	}
+	if _, err := apps.StartRestore(ctx, owner, "shop", RestoreTarget{Moment: "1h"}); !errors.Is(err, ErrRestoreRunning) {
+		t.Fatalf("a second restore while one runs: %v", err)
+	}
+	if _, err := apps.RestoreOf(other.WorkspaceID, "shop", restore.ID); err == nil {
+		t.Fatal("another workspace sees the restore")
+	}
+	agentAnswers(servers, server.ID, agent, protocol.TypeBackupRestore, protocol.TypeError, protocol.Error{Message: "swap the data: disk full"})
+	failed := waitRestore(t, apps, restore.ID, RestoreFailed)
+	if failed.Error != "swap the data: disk full" || failed.FinishedAt == nil {
+		t.Fatalf("failed: %+v", failed)
+	}
+
+	// The agent goes offline in the middle: the restore says so at once.
+	agent.mu.Lock()
+	agent.sent = nil
+	agent.mu.Unlock()
+	backupAgent(t, apps, servers, server, agent, backup)
+	restore, err = apps.StartRestore(ctx, owner, "shop", RestoreTarget{Moment: "1h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); agent.count(protocol.TypeBackupRestore) == 0; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the agent got no restore")
+		}
+	}
+	servers.Connect(server, testHello, "203.0.113.5", func() {}, func(protocol.Message) error { return nil })
+	if gone := waitRestore(t, apps, restore.ID, RestoreFailed); !strings.Contains(gone.Error, "went offline") {
+		t.Fatalf("gone: %+v", gone)
+	}
+}
+
+// TestUndoLabelsCarryTheDay: two restores at the same time of day on
+// different days read apart, and a label two moments share is refused
+// with their ids.
+func TestUndoLabelsCarryTheDay(t *testing.T) {
+	now := time.Date(2026, 11, 7, 18, 0, 0, 0, time.UTC)
+	since := now.Add(-6 * 24 * time.Hour)
+	backup := protocol.DatabaseBackup{Database: "/data/app.db", Since: &since, ReplicatedAt: &now, Copies: []protocol.Copy{
+		{ID: "20261107T150400Z", At: time.Date(2026, 11, 7, 15, 4, 0, 0, time.UTC)},
+		{ID: "20261106T150400Z", At: time.Date(2026, 11, 6, 15, 4, 0, 0, time.UTC)},
+	}}
+	remembered := []model.BackupMoment{
+		{ID: 1, Database: "/data/app.db", Kind: model.MomentEdit, Detail: "sql", At: now.Add(-time.Hour)},
+		{ID: 2, Database: "/data/app.db", Kind: model.MomentEdit, Detail: "sql", At: now.Add(-2 * time.Hour)},
+	}
+	moments := Moments(backup, remembered, now)
+	labels := map[string]string{}
+	for _, moment := range moments {
+		labels[moment.ID] = moment.Label
+	}
+	if labels["undo-20261107T150400Z"] != "Before the restore at 15:04" || labels["undo-20261106T150400Z"] != "Before the restore on Nov 6 at 15:04" {
+		t.Fatalf("labels %v", labels)
+	}
+	if moment, err := findMoment(moments, "before the restore on nov 6 at 15:04"); err != nil || moment.Copy != "20261106T150400Z" {
+		t.Fatalf("by the label with its day: %+v %v", moment, err)
+	}
+	var ambiguous *AmbiguousMomentError
+	if _, err := findMoment(moments, "Before your SQL change"); !errors.As(err, &ambiguous) || !strings.Contains(err.Error(), "edit-1 or edit-2") {
+		t.Fatalf("a shared label: %v", err)
+	}
+	if moment, err := findMoment(moments, "edit-2"); err != nil || moment.ID != "edit-2" {
+		t.Fatalf("by its id: %+v %v", moment, err)
 	}
 }
 

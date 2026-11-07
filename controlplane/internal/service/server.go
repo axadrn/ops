@@ -317,6 +317,8 @@ func (s *ServerService) Connect(server *model.Server, hello protocol.Hello, addr
 	s.sessions[server.ID] = session
 	s.mu.Unlock()
 	if previous != nil {
+		// Its requests get no answer on the new session: they end now.
+		previous.goneOnce.Do(func() { close(previous.gone) })
 		previous.kick()
 	}
 	s.notify(server.WorkspaceID)
@@ -346,6 +348,10 @@ func (s *ServerService) Connect(server *model.Server, hello protocol.Hello, addr
 		s.notify(server.WorkspaceID)
 	}
 }
+
+// ErrAgentGone is a request whose agent went offline before it answered.
+// What it did may still finish on the server.
+var ErrAgentGone = errors.New("the server went offline before it answered; what it did may still finish there")
 
 // ErrAgentOutdated answers a request the agent of a server is too old
 // for, instead of sending it.
@@ -497,6 +503,8 @@ func (s *ServerService) Request(ctx context.Context, serverID string, messageTyp
 	select {
 	case <-ctx.Done():
 		return fmt.Errorf("the agent did not answer: %w", ctx.Err())
+	case <-session.gone:
+		return ErrAgentGone
 	case reply := <-answer:
 		if reply.Type == protocol.TypeError {
 			var agentErr protocol.Error

@@ -89,6 +89,8 @@ type AppService struct {
 	// updates the catalog version each running update deploy brings.
 	downloads map[string]*Download
 	updates   map[string]string
+	// restores are the restores that run or ran in the last day, by ID.
+	restores map[string]*Restore
 }
 
 // liveDeploy is a running deploy: its lines so far and who follows them.

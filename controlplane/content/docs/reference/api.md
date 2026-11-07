@@ -167,7 +167,8 @@ Session-only endpoints keep a leaked token from making new tokens, changing role
 | Endpoint | Token | What it does |
 | --- | --- | --- |
 | `GET /api/v1/apps/{app}/backups` | read | how each database is backed up, `problem` in one sentence when it does not work, and the `moments` to go back to |
-| `POST /api/v1/apps/{app}/restore` | write | goes back to a moment, `{"moment": "before-v12"}` (its id or label), or a time, `{"at": "2026-11-07T14:01:00Z"}`; `database` when the app has several |
+| `POST /api/v1/apps/{app}/restores` | write | goes back to a moment, `{"moment": "before-v12"}` (its id or label), or a time, `{"at": "2026-11-07T14:01:00Z"}`; `database` when the app has several. `202` with the restore; `409` `restore_running` while one runs |
+| `GET /api/v1/apps/{app}/restores/{restore}` | read | how a restore stands: `running`, then `done` or `failed` with `error` |
 | `POST /api/v1/apps/{app}/backups/downloads` | write | starts a full copy of a database in the app's own bucket, `202` with its `id` |
 | `GET /api/v1/apps/{app}/backups/downloads/{download}` | write | how the copy stands; `link`, valid 15 minutes, once `state` is `ready` |
 | `GET /api/v1/buckets` · `POST /api/v1/buckets` | read · write | the workspace's buckets, the default first, with the apps that use each; adds one |

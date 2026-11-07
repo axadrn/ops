@@ -172,7 +172,7 @@ Every command of `moin`, by area. `moin <command> --help` shows the same on your
 | Command | What it does |
 | --- | --- |
 | `moin backups [app]` | how each database is backed up, the daily check, and the moments to go back to |
-| `moin restore [app] --to <moment> [--db <path>] [--yes]` | goes back to a moment from `moin backups`, by its ID or label (`1h`, `before-v12`, `undo-20261107T140200Z`), or to a time in UTC to the minute: `14:01` for today, `"2026-11-07 14:01"`, RFC 3339. Keeps a copy first, so it can be undone for 7 days |
+| `moin restore [app] --to <moment> [--db <path>] [--yes]` | goes back to a moment from `moin backups`, by its ID or label (`1h`, `before-v12`, `undo-20261107T140200Z`), or to a time in UTC to the minute: `14:01` for today, `"2026-11-07 14:01"`, RFC 3339. Keeps a copy first, so it can be undone for 7 days, and waits until the restore is done |
 | `moin backup download [app] [--db <path>] [--link]` | saves a full copy of a database in the current folder, from your bucket; `--link` prints its 15 minute link instead |
 
 ## Bucket

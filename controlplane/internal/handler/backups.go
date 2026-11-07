@@ -19,13 +19,13 @@ func (h *AppsHandler) BackupRestore(w http.ResponseWriter, r *http.Request) {
 		answerFailed(w, r, "Not restored", "Pick a moment.")
 		return
 	}
-	err := h.apps.Restore(r.Context(), actor(r), r.PathValue("app"), service.RestoreTarget{Database: r.FormValue("database"), Moment: moment})
+	_, err := h.apps.StartRestore(r.Context(), actor(r), r.PathValue("app"), service.RestoreTarget{Database: r.FormValue("database"), Moment: moment})
 	if err != nil {
 		failed(w, r, "Not restored", err, nil)
 		return
 	}
+	// The restore runs on its own: the page says so and follows it.
 	h.renderDatabaseBackups(w, r)
-	answerDone(w, r, "Restored", "")
 }
 
 // BackupDownload starts a full copy of the database for a download. The
@@ -181,6 +181,10 @@ func (h *AppsHandler) backupsView(r *http.Request, app *model.App, agent bool, d
 			view.Error = errorMessage(err)
 		}
 		view.Download, err = h.apps.LatestDownload(r.Context(), workspace.ID, app.ID, database)
+		if err != nil {
+			return view, err
+		}
+		view.Restore, err = h.apps.LatestRestore(workspace.ID, app.ID, database)
 		if err != nil {
 			return view, err
 		}

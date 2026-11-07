@@ -42,13 +42,13 @@ func TestBucketRoutes(t *testing.T) {
 	handler := NewAppsHandler(apps)
 	mux := http.NewServeMux()
 	for pattern, serve := range map[string]http.HandlerFunc{
-		"GET /api/v1/buckets":             handler.Buckets,
-		"POST /api/v1/buckets":            handler.AddBucket,
-		"GET /api/v1/buckets/{name}":      handler.GetBucket,
-		"PUT /api/v1/buckets/{name}":      handler.EditBucket,
-		"DELETE /api/v1/buckets/{name}":   handler.DeleteBucket,
-		"PUT /api/v1/apps/{app}/bucket":   handler.SetAppBucket,
-		"POST /api/v1/apps/{app}/restore": handler.Restore,
+		"GET /api/v1/buckets":              handler.Buckets,
+		"POST /api/v1/buckets":             handler.AddBucket,
+		"GET /api/v1/buckets/{name}":       handler.GetBucket,
+		"PUT /api/v1/buckets/{name}":       handler.EditBucket,
+		"DELETE /api/v1/buckets/{name}":    handler.DeleteBucket,
+		"PUT /api/v1/apps/{app}/bucket":    handler.SetAppBucket,
+		"POST /api/v1/apps/{app}/restores": handler.StartRestore,
 	} {
 		mux.HandleFunc(pattern, serve)
 	}
@@ -108,7 +108,7 @@ func TestBucketRoutes(t *testing.T) {
 	if status, answer := send("DELETE", "/api/v1/buckets/main", ""); status != http.StatusConflict || code(answer) != "bucket_in_use" {
 		t.Fatalf("remove the default with older backups: %d %v", status, answer)
 	}
-	if status, answer := send("POST", "/api/v1/apps/blog/restore", `{"moment":""}`); status != http.StatusUnprocessableEntity || code(answer) != "validation_failed" {
+	if status, answer := send("POST", "/api/v1/apps/blog/restores", `{"moment":""}`); status != http.StatusUnprocessableEntity || code(answer) != "validation_failed" {
 		t.Fatalf("a restore without a moment: %d %v", status, answer)
 	}
 

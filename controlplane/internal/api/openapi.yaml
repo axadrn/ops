@@ -2786,14 +2786,14 @@ paths:
         '500':
           $ref: '#/components/responses/Internal'
 
-  /api/v1/apps/{app}/restore:
+  /api/v1/apps/{app}/restores:
     parameters:
       - $ref: '#/components/parameters/AppName'
     post:
       tags: [Backups]
       operationId: restoreApp
       summary: Restore a database
-      description: Puts a database back to a moment from getAppBackups, by its id or label, or to a time in its history, to the minute. The agent first takes one full copy of the database as it is, which stays 7 days in the app's bucket, so the restore can be undone; then it checks what came back, stops the app for the swap and starts it again. A restore to an `undo-` moment puts that copy back.
+      description: Puts a database back to a moment from getAppBackups, by its id or label, or to a time in its history, to the minute. moin checks the moment, answers 202 and the agent runs the restore on its own; follow it with getRestore until `state` is `done` or `failed`. The agent first stops the app's other services, takes one full copy of the database as it is, which stays 7 days in the app's bucket, so the restore can be undone; then it swaps the data in and starts the app again, also when something failed. A restore to an `undo-` moment puts that copy back. A label two moments share needs the moment's id.
       requestBody:
         required: true
         content:
@@ -2805,8 +2805,12 @@ paths:
         - cookieAuth: []
         - apiTokenAuth: [write]
       responses:
-        '204':
-          description: The database is restored and the app runs again.
+        '202':
+          description: The restore runs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Restore'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -2816,12 +2820,47 @@ paths:
           description: '`not_found`. No app with this ID or name belongs to the account.'
         '409':
           $ref: '#/components/responses/Conflict'
-          description: '`no_backups` without a bucket, `server_offline`.'
+          description: '`no_backups` without a bucket, `server_offline`, `agent_outdated`, `restore_running` while a restore of the app runs.'
         '422':
           $ref: '#/components/responses/ValidationFailed'
-          description: '`validation_failed` with `fields.moment`, `fields.at` outside the history, or `fields.database` when the app has several.'
+          description: '`validation_failed` with `fields.moment` (unknown, or a label several moments share), `fields.at` outside the history, or `fields.database` when the app has several.'
         '424':
           $ref: '#/components/responses/AgentError'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /api/v1/apps/{app}/restores/{restore}:
+    parameters:
+      - $ref: '#/components/parameters/AppName'
+      - name: restore
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The id restoreApp answered.
+    get:
+      tags: [Backups]
+      operationId: getRestore
+      summary: Get a restore
+      description: How a restore stands, `running`, then `done` or `failed` with `error`. moin keeps it a day.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+        - apiTokenAuth: [read]
+      responses:
+        '200':
+          description: The restore.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Restore'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/OnboardedForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found` for an unknown app or a restore older than a day.'
         '500':
           $ref: '#/components/responses/Internal'
 
@@ -5995,6 +6034,31 @@ components:
         database:
           type: string
           description: The database's path in the container; needed when the app has several.
+    Restore:
+      type: object
+      required: [id, app, database, to, state, started_at]
+      properties:
+        id:
+          type: string
+        app:
+          type: string
+        database:
+          type: string
+        to:
+          type: string
+          description: The moment it goes back to, as people read it, like "1 hour ago" or "Jan 2 15:04 UTC".
+        state:
+          type: string
+          enum: [running, done, failed]
+        error:
+          type: string
+          description: Why it failed. When moin took the copy before, the message names its undo- moment.
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
     BackupDownload:
       type: object
       required: [id, app, database, state, size, started_at]

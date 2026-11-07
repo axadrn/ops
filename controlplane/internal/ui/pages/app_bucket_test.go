@@ -83,6 +83,29 @@ func TestBackupsPickTheBucket(t *testing.T) {
 		t.Errorf("a broken backup: %s", page)
 	}
 
+	// A restore runs on its own: the page says so and follows it, then
+	// says how it ended.
+	view.Restore = &service.Restore{State: service.RestoreRunning, To: "1 hour ago"}
+	html.Reset()
+	DatabaseBackups(view, "/data/app.db").Render(ctx, &html)
+	if !strings.Contains(html.String(), "Restoring app.db to 1 hour ago") || !strings.Contains(html.String(), `hx-select="#db-backups"`) {
+		t.Errorf("a running restore: %s", html.String())
+	}
+	finished := now.Add(-time.Minute)
+	view.Restore = &service.Restore{State: service.RestoreFailed, To: "Before v12", Error: "swap the data: disk full", FinishedAt: &finished}
+	html.Reset()
+	DatabaseBackups(view, "/data/app.db").Render(ctx, &html)
+	if !strings.Contains(html.String(), "The restore to before v12 failed") || !strings.Contains(html.String(), "disk full") {
+		t.Errorf("a failed restore: %s", html.String())
+	}
+	view.Restore = &service.Restore{State: service.RestoreDone, To: "1 hour ago", FinishedAt: &finished}
+	html.Reset()
+	DatabaseBackups(view, "/data/app.db").Render(ctx, &html)
+	if !strings.Contains(html.String(), "Restored to 1 hour ago") {
+		t.Errorf("a done restore: %s", html.String())
+	}
+	view.Restore = nil
+
 	// A copy being made says so and follows the page; a ready one links.
 	view.Download = &service.Download{State: service.DownloadRunning}
 	html.Reset()

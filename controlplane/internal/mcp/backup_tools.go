@@ -17,7 +17,7 @@ func registerBackupTools(server *mcpsdk.Server, services Services) {
 		"Lists how every database of an app is backed up and the moments a restore can go back to: quick ones (1 minute, 15 minutes, 1 hour ago, yesterday this time), the moments moin remembered before a deploy, a data edit or a catalog update, and the copies it took before each restore (undo-...), all inside the last 7 days. Each database has problem, one short sentence, when its backup does not work, and checked_at, the newest daily check that passed. Needs the read scope.",
 		readOnly("")), Read(member(services, tools.getBackups)))
 	mcpsdk.AddTool(server, newTool("restore_app", "Restore a database",
-		"Puts a database of an app back to a moment from get_backups, by its id or label, or to a time in its history (RFC 3339, to the minute). moin takes one full copy of the database first and keeps it 7 days, so the restore can be undone with its undo- moment; the app stops for the swap and starts again. Ask the user first: confirm must be the app's name, typed out. Needs a token with read and write access.",
+		"Puts a database of an app back to a moment from get_backups, by its id or label, or to a time in its history (RFC 3339, to the minute). moin takes one full copy of the database first and keeps it 7 days, so the restore can be undone with its undo- moment; the app stops for the swap and starts again. It runs on its own and returns its state, running, done or failed with error; call it again with id until it is done. A moment two moments share as a label needs its id. Ask the user first: confirm must be the app's name, typed out. Needs a token with read and write access.",
 		change(true, false)), Write(changes(services, tools.restoreApp)))
 	mcpsdk.AddTool(server, newTool("download_backup", "Download a copy",
 		"Makes a full copy of a database of an app (SQLite gzipped, Postgres as pg_dump in its custom format) in the app's own bucket, never through moin, and returns its state; call it again with id until state is ready, then link is a signed link to the copy in the bucket, valid 15 minutes. A copy lasts a day. Needs a token with read and write access.",
@@ -31,6 +31,12 @@ type RestoreInput struct {
 	Moment   string  `json:"moment,omitempty" jsonschema:"the id or label of a moment from get_backups, like 1h, before-v12 or undo-20261107T140200Z"`
 	At       *string `json:"at,omitempty" jsonschema:"a time in the database's history instead of a moment, RFC 3339"`
 	Confirm  string  `json:"confirm" jsonschema:"the app's name, typed out, after the user agreed"`
+	ID       string  `json:"id,omitempty" jsonschema:"the id of a restore this tool started, to see how it stands; then only app is needed"`
+}
+
+// RestoreOutput is the output of restore_app.
+type RestoreOutput struct {
+	api.Restore
 }
 
 // DownloadInput is the input of download_backup.
@@ -58,27 +64,47 @@ func (t moinTools) getBackups(ctx context.Context, caller Caller, input AppInput
 	return Backups{api.NewAppBackups(t.services.Apps, app, backups)}, nil
 }
 
-func (t moinTools) restoreApp(ctx context.Context, caller Caller, input RestoreInput) (Done, error) {
+func (t moinTools) restoreApp(ctx context.Context, caller Caller, input RestoreInput) (RestoreOutput, error) {
+	if input.ID != "" {
+		restore, err := t.services.Apps.RestoreOf(caller.Token.WorkspaceID, input.App, input.ID)
+		if err != nil {
+			return RestoreOutput{}, err
+		}
+		return RestoreOutput{api.NewRestore(restore)}, nil
+	}
 	var at *time.Time
 	if input.At != nil && *input.At != "" {
 		parsed, err := time.Parse(time.RFC3339, *input.At)
 		if err != nil {
-			return Done{}, InvalidField("at", "Use an RFC 3339 time like 2026-10-31T14:02:00Z.")
+			return RestoreOutput{}, InvalidField("at", "Use an RFC 3339 time like 2026-10-31T14:02:00Z.")
 		}
 		at = &parsed
 	}
 	app, err := t.services.Apps.Get(caller.Token.WorkspaceID, input.App)
 	if err != nil {
-		return Done{}, err
+		return RestoreOutput{}, err
 	}
 	if err := confirmed(input.Confirm, app.Name); err != nil {
-		return Done{}, err
+		return RestoreOutput{}, err
 	}
-	err = t.services.Apps.Restore(ctx, caller.actor(), app.ID, service.RestoreTarget{Database: input.Database, Moment: input.Moment, At: at})
+	restore, err := t.services.Apps.StartRestore(ctx, caller.actor(), app.ID, service.RestoreTarget{Database: input.Database, Moment: input.Moment, At: at})
 	if err != nil {
-		return Done{}, err
+		return RestoreOutput{}, err
 	}
-	return Done{Message: "Restored the database of " + input.App + "; the app runs again. The state before is the newest undo- moment in get_backups for 7 days."}, nil
+	// A small database is back in a moment: wait a little before answering.
+	for deadline := time.Now().Add(20 * time.Second); restore.State == service.RestoreRunning && time.Now().Before(deadline); {
+		select {
+		case <-ctx.Done():
+			return RestoreOutput{api.NewRestore(restore)}, nil
+		case <-time.After(500 * time.Millisecond):
+		}
+		latest, err := t.services.Apps.RestoreOf(caller.Token.WorkspaceID, app.ID, restore.ID)
+		if err != nil {
+			return RestoreOutput{}, err
+		}
+		restore = latest
+	}
+	return RestoreOutput{api.NewRestore(restore)}, nil
 }
 
 func (t moinTools) downloadBackup(ctx context.Context, caller Caller, input DownloadInput) (DownloadOutput, error) {

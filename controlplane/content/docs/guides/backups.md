@@ -27,21 +27,21 @@ The moments, only those inside the last 7 days:
 - **Before v12**: the moment before a deploy started its new version
 - **Before the update to 3.4.1**: before a [catalog](/docs/guides/catalog) update
 - **Before your SQL change**, **Before your edit in orders**: before a [data](/docs/guides/data) edit in moin
-- **Before the restore at 14:02**: the copy moin took before a restore; going back to it undoes the restore
+- **Before the restore at 14:02**: the copy moin took before a restore; going back to it undoes the restore. One from another day says it: **Before the restore on Nov 6 at 14:02**
 
 ## Go back
 
-Pick a moment, then **Restore**, and type the app's name. moin first keeps a copy of the database as it is, then puts it back to that moment. The app stops for a moment and starts again.
+Pick a moment, then **Restore**, and type the app's name. The app stops writing, moin keeps a copy of the database as it is, puts it back to that moment and starts the app again, also when something fails on the way. A big database takes a while: the restore runs on its own, the page says "Restoring" and then how it ended, and the CLI and the TUI wait for it.
 
 ```surfaces
 Web: the app, **Data**, a database: pick a moment under **Go back to**, **Restore**, then type the app name
 CLI: moin restore shop --to before-v12
 TUI: on the app, `b`, pick a moment, `enter`, then type the app name
-API: POST /api/v1/apps/{app}/restore
+API: POST /api/v1/apps/{app}/restores
 MCP: restore_app
 ```
 
-`--to` takes a moment from `moin backups`, by its ID or its label (`1h`, `before-v12`, `"Before your SQL change"`), or a time in UTC to the minute: `14:01` for today, `"2026-11-07 14:01"` or an RFC 3339 time. In the TUI `t` asks for a time. The API and MCP take `moment` or `at`. An app with more than one database: name it with `--db /data/app.db` or `--db postgres-db`.
+`--to` takes a moment from `moin backups`, by its ID or its label (`1h`, `before-v12`, `"Before your SQL change"`), or a time in UTC to the minute: `14:01` for today, `"2026-11-07 14:01"` or an RFC 3339 time. In the TUI `t` asks for a time. The API and MCP take `moment` or `at`; the API answers `202` with the restore to follow at `GET /api/v1/apps/{app}/restores/{restore}`, and `restore_app` answers its state, then takes its `id` to tell how it stands. Two moments with the same label, like two SQL changes, need the moment's ID. An app with more than one database: name it with `--db /data/app.db` or `--db postgres-db`.
 
 ## Undo a restore
 
@@ -51,7 +51,7 @@ Every restore keeps the database as it was right before, for 7 days. Go back to 
 Web: the app, **Data**, a database: **Before the restore at 14:02**, **Restore**
 CLI: moin restore shop --to undo-20261107T140200Z
 TUI: on the app, `b`, pick **Before the restore at …**, `enter`
-API: POST /api/v1/apps/{app}/restore
+API: POST /api/v1/apps/{app}/restores
 MCP: restore_app
 ```
 
@@ -104,7 +104,8 @@ In moin this database is `postgres-db` (`postgres-<service>`): in the bucket, in
 ## Good to know
 
 - A restore replaces the live data, so moin asks you to type the app's name first, on the web, in the CLI and in the TUI. `--yes` skips it in scripts; an agent passes the name as `confirm`.
-- After a restore of a SQLite file its history starts again from the restored file; the copy before the restore is the way back. Postgres keeps its whole history across restores.
+- After a restore of a SQLite file its history starts again from the restored file; the copy before the restore is the way back.
+- A restore that fails says why and names the copy before it, `undo-…`, when moin took one. If the swap of a Postgres stops halfway, the app stays stopped, so nothing writes to half the data, and the restored data stays in a volume the message names. Postgres keeps its whole history across restores.
 - When an app moves to another bucket, its history starts again there.
 - Removing the bucket from moin stops its backups; what is in it stays. See [Remove a bucket](/docs/guides/bucket#remove-a-bucket).
 - To keep a server's backups in one bucket only, use the `backups-to` [rule](/docs/guides/security#rules).

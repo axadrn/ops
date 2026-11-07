@@ -28,8 +28,10 @@ import (
 )
 
 const (
-	backupTimeout  = 10 * time.Minute
-	restoreTimeout = 15 * time.Minute
+	backupTimeout = 10 * time.Minute
+	// restoreTimeout is how long the control plane waits for a restore.
+	// The agent runs it to the end in any case.
+	restoreTimeout = 3 * time.Hour
 )
 
 var (
@@ -42,6 +44,8 @@ var (
 	ErrMoment           = errors.New("there is no such moment: pick one from the list")
 	ErrRestoreDatabase  = errors.New("the app has several databases: name the one to restore")
 	ErrDownloadNotFound = errors.New("there is no such download: it is older than a day, or of another app")
+	ErrRestoreRunning   = errors.New("a restore of this app runs: wait until it is done")
+	ErrRestoreNotFound  = errors.New("there is no such restore: it is older than a day, or of another app")
 )
 
 // AllowOnlyPublicBuckets makes the bucket check refuse private and local
@@ -292,7 +296,7 @@ func Moments(backup protocol.DatabaseBackup, remembered []model.BackupMoment, no
 		if now.Sub(copy.At) > keepMoments {
 			continue
 		}
-		later = append(later, Moment{ID: "undo-" + copy.ID, Label: "Before the restore at " + copy.At.UTC().Format("15:04"), At: copy.At, Kind: MomentUndo, Copy: copy.ID})
+		later = append(later, Moment{ID: "undo-" + copy.ID, Label: "Before the restore " + atWhen(copy.At, now), At: copy.At, Kind: MomentUndo, Copy: copy.ID})
 	}
 	slices.SortStableFunc(later, func(x, y Moment) int { return y.At.Compare(x.At) })
 	return append(moments, later...)
@@ -324,15 +328,50 @@ func rememberedMoment(moment model.BackupMoment) Moment {
 	return shown
 }
 
-// findMoment is the moment named by its ID or its label, in any case.
-func findMoment(moments []Moment, name string) (Moment, bool) {
+// atWhen says when a moment was, in UTC: "at 15:04" today, else "on Nov 6
+// at 15:04".
+func atWhen(at, now time.Time) string {
+	at, now = at.UTC(), now.UTC()
+	if at.YearDay() == now.YearDay() && at.Year() == now.Year() {
+		return "at " + at.Format("15:04")
+	}
+	return "on " + at.Format("Jan 2") + " at " + at.Format("15:04")
+}
+
+// findMoment is the moment named by its ID, or by its label when no other
+// moment has the same one, in any case.
+func findMoment(moments []Moment, name string) (Moment, error) {
 	name = strings.TrimSpace(name)
+	var found []Moment
 	for _, moment := range moments {
-		if strings.EqualFold(moment.ID, name) || strings.EqualFold(moment.Label, name) {
-			return moment, true
+		if strings.EqualFold(moment.ID, name) {
+			return moment, nil
+		}
+		if strings.EqualFold(moment.Label, name) {
+			found = append(found, moment)
 		}
 	}
-	return Moment{}, false
+	switch len(found) {
+	case 0:
+		return Moment{}, ErrMoment
+	case 1:
+		return found[0], nil
+	}
+	ids := make([]string, 0, len(found))
+	for _, moment := range found {
+		ids = append(ids, moment.ID)
+	}
+	return Moment{}, &AmbiguousMomentError{Label: found[0].Label, IDs: ids}
+}
+
+// AmbiguousMomentError refuses a label several moments have.
+type AmbiguousMomentError struct {
+	Label string
+	IDs   []string
+}
+
+func (e *AmbiguousMomentError) Error() string {
+	return "several moments are called " + e.Label + ": name one by its id, " + strings.Join(e.IDs, " or ")
 }
 
 // BackupProblem says in one short sentence why a backup does not work,
@@ -410,20 +449,150 @@ type RestoreTarget struct {
 	At       *time.Time
 }
 
-// Restore puts a database of an app back to a moment. The agent takes one
-// full copy of it as it is first, which keeps 7 days: going back to it
-// undoes the restore.
-func (s *AppService) Restore(ctx context.Context, actor Actor, idOrName string, target RestoreTarget) error {
+// Restore is a restore the agent runs. It runs on its own, as a big
+// database takes longer than a request lasts: RestoreOf says how it
+// stands. To is the moment it goes back to, as people read it.
+type Restore struct {
+	ID          string
+	App         string
+	Database    string
+	To          string
+	State       string
+	Error       string
+	StartedAt   time.Time
+	FinishedAt  *time.Time
+	workspaceID string
+}
+
+// Restore states.
+const (
+	RestoreRunning = "running"
+	RestoreDone    = "done"
+	RestoreFailed  = "failed"
+)
+
+// StartRestore puts a database of an app back to a moment. The agent takes
+// one full copy of it as it is first, which keeps 7 days: going back to it
+// undoes the restore. It checks the moment, then the agent runs the
+// restore on its own; RestoreOf follows it.
+func (s *AppService) StartRestore(ctx context.Context, actor Actor, idOrName string, target RestoreTarget) (*Restore, error) {
 	if strings.TrimSpace(target.Moment) == "" && target.At == nil {
-		return ErrRestoreTarget
+		return nil, ErrRestoreTarget
 	}
 	app, err := s.apps.ByIDOrNameForWorkspace(idOrName, actor.WorkspaceID)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	if running := s.runningRestore(app); running != nil {
+		return nil, ErrRestoreRunning
+	}
+	request, label, err := s.restoreRequest(ctx, app, target)
+	if err != nil {
+		return nil, err
+	}
+	restore := &Restore{ID: randomToken()[:16], App: app.Name, Database: request.Database, To: label, State: RestoreRunning, StartedAt: s.now().UTC(), workspaceID: app.WorkspaceID}
+	s.mu.Lock()
+	if s.restores == nil {
+		s.restores = map[string]*Restore{}
+	}
+	for id, old := range s.restores {
+		if s.now().Sub(old.StartedAt) > downloadKeep && old.State != RestoreRunning {
+			delete(s.restores, id)
+		}
+	}
+	s.restores[restore.ID] = restore
+	s.mu.Unlock()
+	s.notify(app.WorkspaceID)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), restoreTimeout)
+		defer cancel()
+		err := s.servers.Request(ctx, app.ServerID, protocol.TypeBackupRestore, request, nil)
+		finished := s.now().UTC()
+		s.mu.Lock()
+		restore.FinishedAt = &finished
+		if err != nil {
+			restore.State, restore.Error = RestoreFailed, errorText(err)
+		} else {
+			restore.State = RestoreDone
+		}
+		s.mu.Unlock()
+		if err == nil {
+			slog.Info("database restored", "app_id", app.ID, "database", request.Database, "at", request.At, "copy", request.Copy)
+			details := map[string]string{"database": request.Database, "to": label}
+			if request.At != nil {
+				details["at"] = request.At.Format(time.RFC3339)
+			}
+			s.servers.record(actor, "backup.restored", "app", app.Name, details)
+		}
+		s.notify(app.WorkspaceID)
+	}()
+	return s.restoreCopy(restore), nil
+}
+
+// RestoreOf is a restore of an app by its ID.
+func (s *AppService) RestoreOf(workspaceID, idOrName, id string) (*Restore, error) {
+	app, err := s.apps.ByIDOrNameForWorkspace(idOrName, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	restore := s.restores[id]
+	s.mu.Unlock()
+	if restore == nil || restore.workspaceID != workspaceID || restore.App != app.Name {
+		return nil, ErrRestoreNotFound
+	}
+	return s.restoreCopy(restore), nil
+}
+
+// LatestRestore is the newest restore of a database of an app from the
+// last day, for the page to show while it runs and how it ended; nil
+// without one.
+func (s *AppService) LatestRestore(workspaceID, idOrName, database string) (*Restore, error) {
+	app, err := s.apps.ByIDOrNameForWorkspace(idOrName, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var newest *Restore
+	for _, restore := range s.restores {
+		if restore.workspaceID == workspaceID && restore.App == app.Name && (database == "" || restore.Database == database) && s.now().Sub(restore.StartedAt) < downloadKeep && (newest == nil || restore.StartedAt.After(newest.StartedAt)) {
+			newest = restore
+		}
+	}
+	if newest == nil {
+		return nil, nil
+	}
+	copied := *newest
+	return &copied, nil
+}
+
+// runningRestore is the restore of an app that runs now, or nil.
+func (s *AppService) runningRestore(app *model.App) *Restore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, restore := range s.restores {
+		if restore.workspaceID == app.WorkspaceID && restore.App == app.Name && restore.State == RestoreRunning {
+			return restore
+		}
+	}
+	return nil
+}
+
+func (s *AppService) restoreCopy(restore *Restore) *Restore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copied := *restore
+	return &copied
+}
+
+// restoreRequest checks where a restore goes and says it as people read
+// it.
+func (s *AppService) restoreRequest(ctx context.Context, app *model.App, target RestoreTarget) (protocol.BackupRestore, string, error) {
+	var err error
 	databases, err := s.backups(ctx, app)
 	if err != nil {
-		return err
+		return protocol.BackupRestore{}, "", err
 	}
 	var backup *DatabaseBackups
 	for index := range databases {
@@ -433,9 +602,9 @@ func (s *AppService) Restore(ctx context.Context, actor Actor, idOrName string, 
 	}
 	if backup == nil {
 		if target.Database == "" {
-			return ErrRestoreDatabase
+			return protocol.BackupRestore{}, "", ErrRestoreDatabase
 		}
-		return ErrNoDatabase
+		return protocol.BackupRestore{}, "", ErrNoDatabase
 	}
 	request := protocol.BackupRestore{App: app.Name, Database: backup.Database}
 	label := ""
@@ -443,13 +612,13 @@ func (s *AppService) Restore(ctx context.Context, actor Actor, idOrName string, 
 		at := target.At.UTC()
 		since, until, ok := historyReach(backup.DatabaseBackup, s.now().UTC().Add(time.Minute))
 		if !ok || at.Before(since) || at.After(until) {
-			return &MomentOutsideError{Since: since, Until: until, Empty: !ok}
+			return protocol.BackupRestore{}, "", &MomentOutsideError{Since: since, Until: until, Empty: !ok}
 		}
 		request.At, label = &at, at.Format("Jan 2 15:04 UTC")
 	} else {
-		moment, ok := findMoment(backup.Moments, target.Moment)
-		if !ok {
-			return ErrMoment
+		moment, err := findMoment(backup.Moments, target.Moment)
+		if err != nil {
+			return protocol.BackupRestore{}, "", err
 		}
 		if moment.Copy != "" {
 			request.Copy = moment.Copy
@@ -466,20 +635,7 @@ func (s *AppService) Restore(ctx context.Context, actor Actor, idOrName string, 
 		}
 		label = moment.Label
 	}
-	ctx, cancel := context.WithTimeout(ctx, restoreTimeout)
-	defer cancel()
-	err = s.servers.Request(ctx, app.ServerID, protocol.TypeBackupRestore, request, nil)
-	if err != nil {
-		return err
-	}
-	slog.Info("database restored", "app_id", app.ID, "database", backup.Database, "at", request.At, "copy", request.Copy)
-	details := map[string]string{"database": backup.Database, "to": label}
-	if request.At != nil {
-		details["at"] = request.At.Format(time.RFC3339)
-	}
-	s.servers.record(actor, "backup.restored", "app", app.Name, details)
-	s.notify(actor.WorkspaceID)
-	return nil
+	return request, label, err
 }
 
 // MomentOutsideError refuses a time outside the history of a database.

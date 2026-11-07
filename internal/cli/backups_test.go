@@ -89,3 +89,16 @@ func TestBackupDownload(t *testing.T) {
 		t.Fatalf("backup without download: code %d, stderr %q", code, stderr)
 	}
 }
+
+// TestRestoreWaitsForTheAgent: a restore runs on its own on the control
+// plane; the CLI follows it until it is done, and says why it failed.
+func TestRestoreWaitsForTheAgent(t *testing.T) {
+	api := &fakeAPI{answers: map[string]string{
+		"POST /api/v1/apps/shop/restores":   `{"id":"r1","state":"running","to":"1 hour ago"}`,
+		"GET /api/v1/apps/shop/restores/r1": `{"id":"r1","state":"failed","to":"1 hour ago","error":"swap the data: disk full. The copy from before is undo-20261107T140200Z"}`,
+	}}
+	code, _, stderr := runCLI(t, api, "restore", "shop", "--to", "1h", "--yes")
+	if code == 0 || !strings.Contains(stderr, "disk full") || !strings.Contains(stderr, "undo-20261107T140200Z") || !api.seen("GET /api/v1/apps/shop/restores/r1") {
+		t.Fatalf("code %d, stderr %q, requests %v", code, stderr, api.requests)
+	}
+}

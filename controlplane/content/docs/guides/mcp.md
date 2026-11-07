@@ -78,7 +78,7 @@ Any other client that speaks MCP over HTTP: the URL `https://moin.example.com/mc
 | `query_database` | runs read-only SQL | write |
 | `execute_sql` | runs SQL that changes data | write, destructive |
 | `get_backups` | how each database is backed up, the daily check, and the moments to go back to | read |
-| `restore_app` | goes back to a moment (`moment`, its id or label) or a time (`at`), to the minute; keeps a copy first, so it can be undone; `confirm` is the app's name | write, destructive |
+| `restore_app` | goes back to a moment (`moment`, its id or label) or a time (`at`), to the minute; keeps a copy first, so it can be undone; `confirm` is the app's name. It runs on its own and answers its state; with `id` it tells how it stands | write, destructive |
 | `download_backup` | a full copy of a database in the app's own bucket; call again with `id` until `state` is `ready`, then `link` works for 15 minutes | write |
 | `list_buckets` | the buckets, without their secrets, with the apps that use each | read |
 | `add_bucket` | adds a bucket; the first is the default | write |

@@ -117,18 +117,47 @@ func (h *AppsHandler) Backups(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, NewAppBackups(h.apps, app, databases))
 }
 
-// Restore puts a database back to a moment.
-func (h *AppsHandler) Restore(w http.ResponseWriter, r *http.Request) {
+// Restore is a restore the agent runs: running, then done or failed with
+// error. To is the moment it goes back to, as people read it.
+type Restore struct {
+	ID         string     `json:"id"`
+	App        string     `json:"app"`
+	Database   string     `json:"database"`
+	To         string     `json:"to"`
+	State      string     `json:"state"`
+	Error      string     `json:"error,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// NewRestore is the JSON shape of a restore.
+func NewRestore(restore *service.Restore) Restore {
+	return Restore{ID: restore.ID, App: restore.App, Database: restore.Database, To: restore.To, State: restore.State, Error: restore.Error, StartedAt: restore.StartedAt, FinishedAt: restore.FinishedAt}
+}
+
+// StartRestore checks the moment and has the agent put the database back
+// to it, on its own: 202 with the restore to follow.
+func (h *AppsHandler) StartRestore(w http.ResponseWriter, r *http.Request) {
 	var request RestoreRequest
 	if !Decode(w, r, &request) {
 		return
 	}
-	err := h.apps.Restore(r.Context(), actor(r), r.PathValue("app"), service.RestoreTarget(request))
+	restore, err := h.apps.StartRestore(r.Context(), actor(r), r.PathValue("app"), service.RestoreTarget(request))
 	if err != nil {
 		ServiceError(w, err)
 		return
 	}
-	NoContent(w)
+	JSON(w, http.StatusAccepted, NewRestore(restore))
+}
+
+// Restore says how a restore stands.
+func (h *AppsHandler) Restore(w http.ResponseWriter, r *http.Request) {
+	restore, err := h.apps.RestoreOf(ctxkeys.Workspace(r.Context()).ID, r.PathValue("app"), r.PathValue("restore"))
+	if err != nil {
+		ServiceError(w, err)
+		return
+	}
+	JSON(w, http.StatusOK, NewRestore(restore))
 }
 
 // StartDownload has the agent make a full copy of a database in the

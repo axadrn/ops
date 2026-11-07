@@ -86,6 +86,10 @@ func ErrorFor(err error) (int, ErrorDetail, bool) {
 	if errors.As(err, &sendErr) {
 		return http.StatusFailedDependency, ErrorDetail{Code: "alert_send_failed", Message: "The destination did not take the alert: " + sendErr.Message}, true
 	}
+	var ambiguous *service.AmbiguousMomentError
+	if errors.As(err, &ambiguous) {
+		return http.StatusUnprocessableEntity, ErrorDetail{Code: "validation_failed", Message: ValidationMessage, Fields: map[string]string{"moment": strings.ToUpper(ambiguous.Error()[:1]) + ambiguous.Error()[1:] + "."}}, true
+	}
 	var outside *service.MomentOutsideError
 	if errors.As(err, &outside) {
 		return http.StatusUnprocessableEntity, ErrorDetail{Code: "validation_failed", Message: ValidationMessage, Fields: map[string]string{"at": strings.ToUpper(outside.Error()[:1]) + outside.Error()[1:] + "."}}, true
@@ -296,6 +300,9 @@ var serviceErrors = []serviceError{
 	{err: service.ErrMoment, field: "moment", message: "There is no such moment. Pick one from moin backups, like 1h or before-v12."},
 	{err: service.ErrRestoreDatabase, field: "database", message: "The app has several databases. Name the one to restore."},
 	{err: service.ErrDownloadNotFound, status: http.StatusNotFound, code: "not_found", message: "There is no such download. A copy lasts a day; make a new one."},
+	{err: service.ErrRestoreNotFound, status: http.StatusNotFound, code: "not_found", message: "There is no such restore. moin keeps how a restore ended for a day."},
+	{err: service.ErrRestoreRunning, status: http.StatusConflict, code: "restore_running", message: "A restore of this app runs. Wait until it is done."},
+	{err: service.ErrAgentGone, status: http.StatusConflict, code: "server_offline", message: "The server went offline before it answered. What it did may still finish there."},
 	{err: service.ErrAgentOutdated, status: http.StatusConflict, code: "agent_outdated", message: "The agent on this server is too old for this. Update it with moin servers update."},
 	{err: service.ErrGitHubOff, status: http.StatusConflict, code: "github_off", message: "The GitHub App is not set up on this control plane."},
 	{err: service.ErrGitHubState, status: http.StatusBadRequest, code: "github_state", message: "The GitHub install link expired or belongs to another account. Connect again."},
