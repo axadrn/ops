@@ -14,12 +14,12 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// snapshotsKept is how many snapshots from before migrations stay in the
+// copiesKept is how many copies from before migrations stay in the
 // data directory; older ones go.
-const snapshotsKept = 3
+const copiesKept = 3
 
-// snapshotPrefix starts the name of every snapshot file.
-const snapshotPrefix = "backup-before-"
+// copyPrefix starts the name of every copy.
+const copyPrefix = "backup-before-"
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
@@ -52,11 +52,11 @@ func Pending(database *sql.DB) (bool, error) {
 	return current > 0 && current < last.Version, nil
 }
 
-// SnapshotBeforeMigrations copies the database into dir as
+// CopyBeforeMigrations copies the database into dir as
 // backup-before-<version>.db when this build brings migrations it has not
 // run yet, and keeps only the newest few of these copies. It returns the
 // path of the copy, or "" when nothing was pending.
-func SnapshotBeforeMigrations(database *sql.DB, dir, version string) (string, error) {
+func CopyBeforeMigrations(database *sql.DB, dir, version string) (string, error) {
 	pending, err := Pending(database)
 	if err != nil || !pending {
 		return "", err
@@ -65,44 +65,44 @@ func SnapshotBeforeMigrations(database *sql.DB, dir, version string) (string, er
 	if name == "" {
 		name = "dev"
 	}
-	path := filepath.Join(dir, snapshotPrefix+name+".db")
+	path := filepath.Join(dir, copyPrefix+name+".db")
 	// VACUUM INTO refuses a file that exists, such as one of a dev build.
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
 	if _, err := database.Exec(`VACUUM INTO ?`, path); err != nil {
-		return "", fmt.Errorf("snapshot the database before migrations: %w", err)
+		return "", fmt.Errorf("copy the database before migrations: %w", err)
 	}
-	slog.Info("database snapshot before migrations", "path", path)
-	pruneSnapshots(dir)
+	slog.Info("database copied before migrations", "path", path)
+	pruneCopies(dir)
 	return path, nil
 }
 
-// pruneSnapshots removes all but the newest snapshots.
-func pruneSnapshots(dir string) {
+// pruneCopies removes all but the newest copies.
+func pruneCopies(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	type snapshot struct {
+	type copied struct {
 		path    string
 		modTime int64
 	}
-	var snapshots []snapshot
+	var copies []copied
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), snapshotPrefix) || !strings.HasSuffix(entry.Name(), ".db") {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), copyPrefix) || !strings.HasSuffix(entry.Name(), ".db") {
 			continue
 		}
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-		snapshots = append(snapshots, snapshot{filepath.Join(dir, entry.Name()), info.ModTime().UnixNano()})
+		copies = append(copies, copied{filepath.Join(dir, entry.Name()), info.ModTime().UnixNano()})
 	}
-	slices.SortFunc(snapshots, func(a, b snapshot) int { return int(b.modTime - a.modTime) })
-	for _, old := range snapshots[min(len(snapshots), snapshotsKept):] {
+	slices.SortFunc(copies, func(a, b copied) int { return int(b.modTime - a.modTime) })
+	for _, old := range copies[min(len(copies), copiesKept):] {
 		if err := os.Remove(old.path); err != nil {
-			slog.Warn("remove an old database snapshot", "path", old.path, "error", err)
+			slog.Warn("remove an old copy of the database", "path", old.path, "error", err)
 		}
 	}
 }

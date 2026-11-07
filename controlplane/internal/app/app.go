@@ -60,12 +60,12 @@ func New(cfg *config.Config) (*App, error) {
 			_ = database.Close()
 		}
 	}()
-	// The data directory holds the database, its snapshots from before
+	// The data directory holds the database, its copies from before
 	// migrations and the files the updater reads and writes.
 	dataDir := "data"
 	if file := dbbackup.File(cfg.DBConnection); file != "" {
 		dataDir = filepath.Dir(file)
-		if _, err := db.SnapshotBeforeMigrations(database.DB, dataDir, build.Version); err != nil {
+		if _, err := db.CopyBeforeMigrations(database.DB, dataDir, build.Version); err != nil {
 			return nil, err
 		}
 	}

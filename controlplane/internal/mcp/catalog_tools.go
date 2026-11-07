@@ -28,7 +28,7 @@ func registerCatalogTools(server *mcpsdk.Server, services Services) {
 	update := change(false, false)
 	update.Title = "Update a catalog app"
 	mcpsdk.AddTool(server, &mcpsdk.Tool{Name: "update_app", Title: update.Title, Annotations: update,
-		Description: "Sets an app installed from the catalog to a version, the newest release when empty, and deploys it. The deploy takes a snapshot of its databases first. An older version also goes, but its migrations may not go back: ask the user before going back. Returns the app and the deploy; follow it with get_deploy. Needs a token with read and write access.",
+		Description: "Sets an app installed from the catalog to a version, the newest release when empty, and deploys it. moin remembers the moment before the deploy, so a restore can go back to it. An older version also goes, but its migrations may not go back: ask the user before going back. Returns the app and the deploy; follow it with get_deploy. Needs a token with read and write access.",
 	}, Write(changes(services, tools.update)))
 }
 

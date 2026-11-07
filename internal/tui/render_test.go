@@ -32,7 +32,7 @@ func TestEveryFrameFitsTheScreen(t *testing.T) {
 		{"backups", func(m model) model { return m.withApp("shop", tBackups) }},
 		{"restore", func(m model) model { return press(m.withApp("shop", tBackups), "t") }},
 		{"restore typing", func(m model) model { return press(m.withApp("shop", tBackups), "t", "enter", "s") }},
-		{"restore snapshot", func(m model) model { return press(m.withApp("shop", tBackups), "enter") }},
+		{"restore", func(m model) model { return press(m.withApp("shop", tBackups), "enter") }},
 		{"env", func(m model) model { return m.withApp("shop", tEnv) }},
 		{"env shown", func(m model) model { return press(m.withApp("shop", tEnv), "v") }},
 		{"env prompt", func(m model) model { return press(m.withApp("shop", tEnv), "a", "X", "=") }},

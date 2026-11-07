@@ -162,7 +162,7 @@ paths:
       tags: [Meta]
       operationId: updateControlPlane
       summary: Update the control plane to the newest release
-      description: For an admin of a self-hosted control plane. The updater next to it pulls the new image and restarts the control plane, which snapshots its database and migrates it. If the new version does not answer within two minutes, the updater starts the old one again. Follow `update.state` with `GET /api/v1/version`: `requested`, `updating`, then `done`, `rolled_back` or `failed` with a `reason`. The activity of the workspace notes the start and the end.
+      description: For an admin of a self-hosted control plane. The updater next to it pulls the new image and restarts the control plane, which copies its database and migrates it. If the new version does not answer within two minutes, the updater starts the old one again. Follow `update.state` with `GET /api/v1/version`: `requested`, `updating`, then `done`, `rolled_back` or `failed` with a `reason`. The activity of the workspace notes the start and the end.
       security:
         - bearerAuth: []
         - cookieAuth: []

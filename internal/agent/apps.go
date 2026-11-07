@@ -55,7 +55,7 @@ var appIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 type apps struct {
 	dir  string
 	send func(protocol.MessageType, string, any)
-	// backups takes snapshots before deploys and follows new databases.
+	// backups follows the databases a deploy adds or removes.
 	backups *backups
 	// proxyMode is "direct" or "tunnel", from the server config.
 	proxyMode func() string
