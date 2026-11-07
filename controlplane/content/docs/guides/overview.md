@@ -10,7 +10,7 @@ The Overview answers one question first: is everything OK? It says **All good.**
 ```surfaces
 Web: **Overview**, the first page of a workspace, or `g` then `o`
 CLI: moin status
-TUI: the dashboard, where `moin` starts
+TUI: the overview, where `moin` starts
 API: GET /api/v1/status
 MCP: get_status
 ```

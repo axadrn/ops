@@ -19,7 +19,7 @@ import (
 // logTail is how many lines per container the logs view keeps.
 const logTail = 500
 
-// start loads what the dashboard needs and opens the live lists.
+// start loads what the overview needs and opens the live lists.
 func (m model) start() tea.Cmd {
 	api, ctx := m.api, m.ctx
 	watch := func(stream func() error) {
@@ -90,7 +90,7 @@ func (m model) loadEvents(cursor string) tea.Cmd {
 }
 
 // loadUsage loads the last hour of every online server, for the
-// dashboard's sparklines.
+// overview's sparklines.
 func (m model) loadUsage() []tea.Cmd {
 	api, ctx := m.api, m.ctx
 	var cmds []tea.Cmd

@@ -1,7 +1,7 @@
 package tui
 
-// The dashboard: what runs, what needs you and what happened, like the
-// overview of the web app.
+// The overview: what runs, what needs you and what happened, like the
+// Overview of the web app.
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"github.com/axadrn/moin/internal/human"
 )
 
-func (m model) dashboard(u ui, w, h int) string {
+func (m model) overview(u ui, w, h int) string {
 	now := m.now()
 	var out []string
 	greet := "Moin"

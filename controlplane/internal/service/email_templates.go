@@ -35,7 +35,7 @@ func magicLinkEmailTemplate(magicURL, appName string) emailContent {
 	}
 }
 
-func welcomeEmailTemplate(name, dashboardURL, appName string) emailContent {
+func welcomeEmailTemplate(name, appURL, appName string) emailContent {
 	return emailContent{
 		Subject:     fmt.Sprintf("Welcome to %s!", appName),
 		Preheader:   "Your account is ready.",
@@ -43,7 +43,7 @@ func welcomeEmailTemplate(name, dashboardURL, appName string) emailContent {
 		Greeting:    fmt.Sprintf("Hi %s,", name),
 		Intro:       []string{"Your email is verified and your account is active."},
 		ActionLabel: "Get started",
-		ActionURL:   dashboardURL,
+		ActionURL:   appURL,
 		Outro:       []string{"If you have questions, reach out to our support team."},
 		AppName:     appName,
 	}

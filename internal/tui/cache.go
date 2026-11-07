@@ -1,8 +1,8 @@
 package tui
 
 // The last state the TUI saw, kept on disk so the next start draws the
-// dashboard at once while the live lists connect. It holds what the
-// dashboard shows and the recent picks of the palette; never env values,
+// overview at once while the live lists connect. It holds what the
+// overview shows and the recent picks of the palette; never env values,
 // logs or the token.
 
 import (

@@ -129,7 +129,7 @@ func TestOnboardingCreatesTheNamedWorkspace(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	test.handler.CompleteOnboarding(recorder, onboardingRequest(http.MethodPost, user, url.Values{"name": {"Grace Hopper"}, "workspace": {"Acme Labs"}}, githubCookie(t, user.ID, "Grace Hopper")))
 
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/app/acme-labs/dashboard" {
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/app/acme-labs/overview" {
 		t.Fatalf("status = %d, location = %q", recorder.Code, recorder.Header().Get("Location"))
 	}
 	cleared := false

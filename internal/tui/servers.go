@@ -13,7 +13,7 @@ import (
 func (m model) serversView(u ui, w, h int) string {
 	iw := inner(w)
 	if len(m.servers) == 0 {
-		return u.panel("Servers", "", []string{"", u.muted("No servers yet. Add one in the web app: w on the dashboard.")}, w, h, true)
+		return u.panel("Servers", "", []string{"", u.muted("No servers yet. Add one in the web app: w on the overview.")}, w, h, true)
 	}
 	system, wide := iw >= 80, iw >= 108
 	aw := 8

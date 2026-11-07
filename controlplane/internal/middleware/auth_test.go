@@ -55,7 +55,7 @@ func TestAuthMiddlewareLoadsAuthenticatedContext(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/app/authenticated-workspace/dashboard", nil)
+	request := httptest.NewRequest(http.MethodGet, "/app/authenticated-workspace/overview", nil)
 	request.AddCookie(sessionCookie)
 	recorder := httptest.NewRecorder()
 	AuthMiddleware(authService, userService)(next).ServeHTTP(recorder, request)
@@ -229,7 +229,7 @@ func TestRequireAuthRedirectsGuestsAndIncompleteProfiles(t *testing.T) {
 				called = true
 				w.WriteHeader(http.StatusNoContent)
 			})
-			request := httptest.NewRequest(http.MethodGet, "/app/example/dashboard", nil)
+			request := httptest.NewRequest(http.MethodGet, "/app/example/overview", nil)
 			if test.context != nil {
 				request = test.context(request)
 			}
@@ -285,7 +285,7 @@ func TestWithWorkspaceLoadsWorkspaceAndRejectsCrossTenantAccess(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/app/"+alice.Workspace.Slug+"/dashboard", nil)
+	request := httptest.NewRequest(http.MethodGet, "/app/"+alice.Workspace.Slug+"/overview", nil)
 	request.SetPathValue("workspaceSlug", alice.Workspace.Slug)
 	request = request.WithContext(ctxkeys.WithUser(request.Context(), alice.User))
 	recorder := httptest.NewRecorder()
@@ -294,7 +294,7 @@ func TestWithWorkspaceLoadsWorkspaceAndRejectsCrossTenantAccess(t *testing.T) {
 		t.Fatalf("member status = %d, want %d", recorder.Code, http.StatusNoContent)
 	}
 
-	crossTenant := httptest.NewRequest(http.MethodGet, "/app/"+bob.Workspace.Slug+"/dashboard", nil)
+	crossTenant := httptest.NewRequest(http.MethodGet, "/app/"+bob.Workspace.Slug+"/overview", nil)
 	crossTenant.SetPathValue("workspaceSlug", bob.Workspace.Slug)
 	crossTenant = crossTenant.WithContext(ctxkeys.WithUser(crossTenant.Context(), alice.User))
 	crossTenantRecorder := httptest.NewRecorder()
@@ -322,7 +322,7 @@ func TestWithWorkspaceRestoresMissingFreeSubscription(t *testing.T) {
 		service.NewEmailService(testutil.NewMemoryMailer(), "http://localhost:8090", "Test App"),
 	)
 
-	request := httptest.NewRequest(http.MethodGet, "/app/"+fixture.Workspace.Slug+"/dashboard", nil)
+	request := httptest.NewRequest(http.MethodGet, "/app/"+fixture.Workspace.Slug+"/overview", nil)
 	request.SetPathValue("workspaceSlug", fixture.Workspace.Slug)
 	request = request.WithContext(ctxkeys.WithUser(request.Context(), fixture.User))
 	recorder := httptest.NewRecorder()

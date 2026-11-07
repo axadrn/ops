@@ -10,7 +10,7 @@ The activity is moin's notebook of who did what, and when: every change in a wor
 ```surfaces
 Web: **Settings**, **Activity**, or `g` then `y`
 CLI: moin activity
-TUI: `a` on the dashboard, or `activity` in the palette (`space`)
+TUI: `a` on the overview, or `activity` in the palette (`space`)
 API: GET /api/v1/activity
 MCP: list_activity
 ```

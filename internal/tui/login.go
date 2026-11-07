@@ -1,7 +1,7 @@
 package tui
 
 // Signing in. Without a token the TUI starts the browser sign-in, shows the
-// code to confirm and lands on the dashboard once the browser said yes. It
+// code to confirm and lands on the overview once the browser said yes. It
 // saves the token where `moin login` does, so one sign-in is enough for
 // both.
 

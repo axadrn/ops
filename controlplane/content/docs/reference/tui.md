@@ -11,7 +11,7 @@ The terminal UI is moin in your terminal: run `moin` in a repo for the daily wor
 
 | | |
 | --- | --- |
-| Sign in | without a token, `moin` shows a code and opens the browser to confirm it, then lands on the dashboard. It saves the token where `moin login` does, so you sign in once for both. `esc` quits the sign-in |
+| Sign in | without a token, `moin` shows a code and opens the browser to confirm it, then lands on the overview. It saves the token where `moin login` does, so you sign in once for both. `esc` quits the sign-in |
 | Last seen | `moin` starts with what it showed last time, marked **last seen** in the header until the control plane answers; an app you come back to shows its tabs at once while they load again |
 | Cache | in your cache folder, readable only by you, without env values, logs or the token; `moin logout` removes it |
 | Screen | every view fills the screen, from 80 by 24 up. The header says where you are, the footer the keys you need most, and results (a few seconds) and errors (in red, a little longer) |
@@ -21,7 +21,7 @@ The terminal UI is moin in your terminal: run `moin` in a repo for the daily wor
 
 | View | Shows |
 | --- | --- |
-| Dashboard | apps live, servers online, backups checked and updates; your apps with their status, the servers with CPU and memory, the recent activity and what needs you |
+| Overview | apps live, servers online, backups checked and updates; your apps with their status, the servers with CPU and memory, the recent activity and what needs you |
 | App | one app in seven tabs: deploys, logs, backups, env, domains, uptime, metrics |
 | Deploy | the log of one deploy, live while it runs |
 | Run | one command in a container of the app and what it writes |
@@ -37,7 +37,7 @@ The terminal UI is moin in your terminal: run `moin` in a repo for the daily wor
 | `space` · `ctrl+k` · `/` | the palette, a box in the middle of the screen like `⌘K` on the web: finds every app, server, place and action and runs it. Type a few letters, like `shop logs` or `redeploy api` (words in any order, matched letters bold, the last pick first), move with `↑` `↓` or `ctrl+n` `ctrl+p`, `enter` runs it, `esc` closes it. With nothing typed, what you can do to the app or server you are on comes first. Every entry shows its key at the right, the one that does the same without the palette. `/` works everywhere but in the logs. [Palette and keys](/docs/reference/palette) |
 | `esc` | back one level; closes what is open first |
 | `?` | every key of this place and the ones that work everywhere; `↑` `↓` scroll them on a small screen |
-| `q` | quits on the dashboard, goes back elsewhere |
+| `q` | quits on the overview, goes back elsewhere |
 | `ctrl+c` | quits from anywhere |
 | `↑` `↓` · `j` `k` | move |
 | `g` · `G` | the first row, the last row |
@@ -53,7 +53,7 @@ The terminal UI is moin in your terminal: run `moin` in a repo for the daily wor
 | A line to type into | `enter` takes it, `esc` cancels, `ctrl+u` clears it, `ctrl+w` deletes the last word |
 | A switch, a paused check, an env var | changes on the screen at once; if the control plane refuses, the footer says why in red and the tab loads what is true again |
 
-## Dashboard
+## Overview
 
 | Key | Does |
 | --- | --- |
@@ -124,7 +124,7 @@ The terminal UI is moin in your terminal: run `moin` in a repo for the daily wor
 
 ## Web app
 
-`w` on the dashboard, or `web app` in the palette, lists the pages that open in your browser, signed in as you. `enter` or the page's letter opens it.
+`w` on the overview, or `web app` in the palette, lists the pages that open in your browser, signed in as you. `enter` or the page's letter opens it.
 
 | Key | Page |
 | --- | --- |

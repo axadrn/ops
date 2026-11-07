@@ -192,13 +192,12 @@ func workspaceRoutes(mux *http.ServeMux, app *app.App, emailChanges, limitInvita
 	account := handler.NewAccountHandler(app.AuthService, app.UserService, app.FileService)
 	workspaceHandler := handler.NewWorkspaceHandler(app.WorkspaceService)
 	mux.HandleFunc("GET /app", middleware.RequireAuth(workspaceHandler.Redirect))
-	// Sign-ins and invitations lead to the dashboard, and a workspace's own
-	// address too: both are the overview.
+	// Sign-ins and invitations lead to the overview, and a workspace's own
+	// path too.
 	overview := handler.NewOverviewHandler(app.StatusService, app.AppService, app.ServerService)
 	toOverview := workspace(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, ctxkeys.AppBasePath(r.Context())+"/overview", http.StatusSeeOther)
 	})
-	mux.HandleFunc("GET /app/{workspaceSlug}/dashboard", toOverview)
 	mux.HandleFunc("GET /app/{workspaceSlug}", toOverview)
 	mux.HandleFunc("GET /app/{workspaceSlug}/overview", workspace(overview.Page))
 	mux.HandleFunc("GET /app/{workspaceSlug}/search", workspace(handler.NewCommandHandler(app.AppService, app.ServerService, app.DocsService, app.CatalogService).Search))

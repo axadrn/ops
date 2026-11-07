@@ -17,8 +17,8 @@ func TestEveryFrameFitsTheScreen(t *testing.T) {
 		name string
 		make func(m model) model
 	}{
-		{"dashboard", func(m model) model { return m }},
-		{"dashboard servers focus", func(m model) model { return press(m, "tab", "down") }},
+		{"overview", func(m model) model { return m }},
+		{"overview servers focus", func(m model) model { return press(m, "tab", "down") }},
 		{"palette", func(m model) model { return press(m, "space") }},
 		{"palette in app", func(m model) model { return press(m.withApp("shop", tDeploys), "space") }},
 		{"palette on server", func(m model) model { m, _ = m.open(screen{v: vServer, server: "web-1"}); return press(m, "space") }},
@@ -105,8 +105,8 @@ func fakeLogin(ctx context.Context, show func(code, link string)) error {
 	return nil
 }
 
-func TestDashboardShowsWhatRunsAndWhatNeedsYou(t *testing.T) {
-	frame := checkFrame(t, "dashboard", fixture(160, 45))
+func TestOverviewShowsWhatRunsAndWhatNeedsYou(t *testing.T) {
+	frame := checkFrame(t, "overview", fixture(160, 45))
 	for _, want := range []string{
 		"Moin, Ada", "Wednesday, 4 November",
 		"3 things need you", "api: v7 failed its health check",
@@ -115,19 +115,19 @@ func TestDashboardShowsWhatRunsAndWhatNeedsYou(t *testing.T) {
 		"web-1", "12%", "edge-02", "v0.9.8 ↑", "lab", "offline",
 		"Recent activity", "ada deployed shop v43",
 		"Needs you", "plausible", "Plausible 2.1 → 2.2",
-		"moin.", "acme › dashboard", "space palette",
+		"moin.", "acme › overview", "space palette",
 	} {
 		if !strings.Contains(frame, want) {
-			t.Errorf("the dashboard lacks %q", want)
+			t.Errorf("the overview lacks %q", want)
 		}
 	}
 }
 
-func TestDashboardSmallStaysReadable(t *testing.T) {
-	frame := checkFrame(t, "dashboard", fixture(80, 24))
+func TestOverviewSmallStaysReadable(t *testing.T) {
+	frame := checkFrame(t, "overview", fixture(80, 24))
 	for _, want := range []string{"2/5 apps live", "shop", "web-1"} {
 		if !strings.Contains(frame, want) {
-			t.Errorf("the small dashboard lacks %q", want)
+			t.Errorf("the small overview lacks %q", want)
 		}
 	}
 }

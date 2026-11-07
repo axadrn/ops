@@ -49,7 +49,7 @@ func (m model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		return m.back()
 	case "q":
-		if m.cur.v == vDash {
+		if m.cur.v == vOverview {
 			return m, tea.Quit
 		}
 		return m.back()
@@ -101,8 +101,8 @@ func move(s string) int {
 
 func (m model) viewKey(s string) (tea.Model, tea.Cmd) {
 	switch m.cur.v {
-	case vDash:
-		return m.dashKey(s)
+	case vOverview:
+		return m.overviewKey(s)
 	case vApp:
 		return m.appKey(s)
 	case vDeploy:
@@ -139,17 +139,17 @@ func (m model) viewKey(s string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// dashboard panels the cursor can be in.
+// overview panels the cursor can be in.
 const (
 	fApps = iota
 	fServers
 	fIssues
 )
 
-func (m model) dashKey(s string) (tea.Model, tea.Cmd) {
+func (m model) overviewKey(s string) (tea.Model, tea.Cmd) {
 	n := []int{len(m.apps), len(m.servers), len(m.issues())}
 	if d := move(s); d != 0 {
-		return m.cursor(dashList[m.focus], n[m.focus], d), nil
+		return m.cursor(overviewLists[m.focus], n[m.focus], d), nil
 	}
 	switch s {
 	case "tab", "shift+tab":
@@ -190,7 +190,7 @@ func (m model) dashKey(s string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-var dashList = []string{"apps", "servers", "issues"}
+var overviewLists = []string{"apps", "servers", "issues"}
 
 // issue is one line of what needs you: a status issue or an update.
 type issue struct {

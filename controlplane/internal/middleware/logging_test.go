@@ -4,7 +4,7 @@ import "testing"
 
 func TestSafeRequestLogPathRedactsTokens(t *testing.T) {
 	tests := map[string]string{
-		"/app/acme/dashboard":                   "/app/acme/dashboard",
+		"/app/acme/overview":                    "/app/acme/overview",
 		"/auth/magic-link/raw-secret":           "/auth/magic-link/:token",
 		"/api/v1/invitations/raw-secret":        "/api/v1/invitations/:token",
 		"/api/v1/invitations/raw-secret/accept": "/api/v1/invitations/:token/accept",

@@ -178,7 +178,7 @@ func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		answerFailed(w, r, "Workspace not created", "Something went wrong. Please try again.")
 		return
 	}
-	redirect(w, r, fmt.Sprintf("/app/%s/dashboard", workspace.Slug), http.StatusSeeOther)
+	redirect(w, r, fmt.Sprintf("/app/%s/overview", workspace.Slug), http.StatusSeeOther)
 }
 
 func (h *WorkspaceHandler) redirectToWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +232,7 @@ func (h *WorkspaceHandler) redirectToFirstWorkspace(w http.ResponseWriter, r *ht
 		redirect(w, r, "/workspaces/new", http.StatusSeeOther)
 		return
 	}
-	redirect(w, r, fmt.Sprintf("/app/%s/dashboard", members[0].Slug), http.StatusSeeOther)
+	redirect(w, r, fmt.Sprintf("/app/%s/overview", members[0].Slug), http.StatusSeeOther)
 }
 
 // handleError answers a workspace action that failed: title says what did

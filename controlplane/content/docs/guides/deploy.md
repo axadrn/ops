@@ -13,7 +13,7 @@ Sends the code in your folder to the server, which builds and starts it. The fir
 
 ```surfaces
 CLI: moin deploy
-TUI: `D` on the dashboard or the app
+TUI: `D` on the overview or the app
 API: POST /api/v1/apps/{app}/uploads
 API: POST /api/v1/apps/{app}/deploys
 ```
@@ -45,7 +45,7 @@ It downloads the code, builds it on your server, starts it, checks it stays up a
 ```surfaces
 Web: **Apps**
 CLI: moin apps
-TUI: the dashboard, where `moin` starts
+TUI: the overview, where `moin` starts
 API: GET /api/v1/apps
 MCP: list_apps
 ```

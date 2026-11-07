@@ -89,8 +89,8 @@ func (m model) crumbs() []string {
 	}
 	c := []string{ws}
 	switch m.cur.v {
-	case vDash:
-		c = append(c, "dashboard")
+	case vOverview:
+		c = append(c, "overview")
 	case vApp:
 		c = append(c, m.cur.app, tabName(m.cur.tab))
 	case vDeploy:
@@ -181,7 +181,7 @@ func (m model) viewKeys() []kb {
 		return []kb{{"esc", "close"}}
 	}
 	switch m.cur.v {
-	case vDash:
+	case vOverview:
 		return []kb{{"↑↓", "select"}, {"tab", "panel"}, {"enter", "open"}, {"s", "servers"}, {"a", "activity"}, {"q", "quit"}}
 	case vApp:
 		// the tab bar names the keys of the tabs
@@ -245,7 +245,7 @@ func (m model) body(u ui, w, h int) string {
 	case vWeb:
 		return m.webView(u, w, h)
 	}
-	return m.dashboard(u, w, h)
+	return m.overview(u, w, h)
 }
 
 // appState is the status word and label of an app: live v3, deploying v4,

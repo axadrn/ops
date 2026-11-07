@@ -11,7 +11,7 @@ Everything works in the web app, the [CLI](/docs/reference/cli), the [API](/docs
 
 | Feature | Web | CLI | TUI | API | MCP |
 | --- | --- | --- | --- | --- | --- |
-| What needs you, what runs | ✓ | ✓ `status` | ✓ dashboard | ✓ | ✓ |
+| What needs you, what runs | ✓ | ✓ `status` | ✓ overview | ✓ | ✓ |
 | Servers, live | ✓ | ✓ `servers` | ✓ | ✓ | ✓ |
 | Server metrics, 1h to 30d | ✓ | ✓ `metrics --server` | ✓ | ✓ | ✓ |
 | Update an agent | ✓ | ✓ `servers update` | ✓ `u` | ✓ | ✓ |
@@ -46,7 +46,7 @@ Everything works in the web app, the [CLI](/docs/reference/cli), the [API](/docs
 
 ## Setup
 
-The terminal UI opens these in your browser: `w` on the dashboard, or `web app` in the palette.
+The terminal UI opens these in your browser: `w` on the overview, or `web app` in the palette.
 
 | Feature | Web | CLI | TUI | API | MCP |
 | --- | --- | --- | --- | --- | --- |

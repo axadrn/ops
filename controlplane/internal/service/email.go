@@ -37,8 +37,8 @@ func (s *EmailService) MagicLinkURL(token string) string {
 }
 
 func (s *EmailService) SendWelcomeEmail(email, name string) error {
-	dashboardURL := fmt.Sprintf("%s/app", s.appURL)
-	return s.send("welcome", email, welcomeEmailTemplate(name, dashboardURL, s.appName))
+	link := fmt.Sprintf("%s/app", s.appURL)
+	return s.send("welcome", email, welcomeEmailTemplate(name, link, s.appName))
 }
 
 func (s *EmailService) SendWorkspaceInvitationEmail(email, token, workspaceName, inviterName string) error {

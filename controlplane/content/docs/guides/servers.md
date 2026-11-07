@@ -36,7 +36,7 @@ Every server with its live status; lists update by themselves.
 ```surfaces
 Web: **Servers**
 CLI: moin servers
-TUI: `s` on the dashboard
+TUI: `s` on the overview
 API: GET /api/v1/servers
 MCP: list_servers
 ```

@@ -62,7 +62,7 @@ func appContext(role string, workspaceCount int) context.Context {
 
 	ctx := context.Background()
 	ctx = ctxkeys.WithRenderConfig(ctx, config.RenderConfig{SupportEmail: "support@example.com", Billing: true})
-	ctx = ctxkeys.WithURLPath(ctx, "/app/first-workspace/dashboard")
+	ctx = ctxkeys.WithURLPath(ctx, "/app/first-workspace/overview")
 	ctx = ctxkeys.WithUser(ctx, &model.User{ID: "user-1", Email: "user@example.com", Name: "Test User"})
 	ctx = ctxkeys.WithWorkspace(ctx, workspace)
 	ctx = ctxkeys.WithWorkspaceMember(ctx, member)

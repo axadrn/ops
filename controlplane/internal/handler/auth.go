@@ -273,7 +273,7 @@ func (h *authHandler) CompleteOnboarding(w http.ResponseWriter, r *http.Request)
 		redirect(w, r, device, http.StatusSeeOther)
 		return
 	}
-	redirect(w, r, fmt.Sprintf("/app/%s/dashboard", workspace.Slug), http.StatusSeeOther)
+	redirect(w, r, fmt.Sprintf("/app/%s/overview", workspace.Slug), http.StatusSeeOther)
 }
 
 func onboardingFieldError(w http.ResponseWriter, r *http.Request, form pages.OnboardingForm, field, message string) {
@@ -332,7 +332,7 @@ func (h *authHandler) redirectAfterAuth(w http.ResponseWriter, r *http.Request, 
 		redirect(w, r, "/workspaces/new", http.StatusSeeOther)
 		return
 	}
-	redirect(w, r, fmt.Sprintf("/app/%s/dashboard", members[0].Slug), http.StatusSeeOther)
+	redirect(w, r, fmt.Sprintf("/app/%s/overview", members[0].Slug), http.StatusSeeOther)
 }
 
 func (h *authHandler) pendingInvitationForUser(w http.ResponseWriter, r *http.Request, user *model.User) (string, bool) {

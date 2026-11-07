@@ -31,12 +31,12 @@ var everywhere = keyGroup{"Everywhere", []kb{
 // helpGroups are the key groups of the place you are in.
 func (m model) helpGroups() []keyGroup {
 	switch m.cur.v {
-	case vDash:
+	case vOverview:
 		ks := []kb{{"enter", "open the selected one"}, {"tab", "next panel"}, {"shift+tab", "panel before"}, {"s", "servers"}, {"a", "activity"}, {"w", "web app"}}
 		if _, ok := m.findApp(m.dirApp()); ok && m.dir != "" {
 			ks = append(ks, kb{"D", "deploy this directory"})
 		}
-		return []keyGroup{{"Dashboard", ks}}
+		return []keyGroup{{"Overview", ks}}
 	case vApp:
 		var tabKeys []kb
 		for _, t := range tabs {

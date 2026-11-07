@@ -28,11 +28,11 @@ func update(m model, msg tea.Msg) (model, tea.Cmd) {
 	return next.(model), cmd
 }
 
-func TestEscGoesBackOneLevelAndQQuitsOnlyTheDashboard(t *testing.T) {
+func TestEscGoesBackOneLevelAndQQuitsOnlyTheOverview(t *testing.T) {
 	m := fixture(120, 40)
 	m = press(m, "enter") // the first app
 	if m.cur.v != vApp || m.cur.app != "shop" || m.cur.tab != tDeploys {
-		t.Fatalf("enter on the dashboard opens %+v, want shop deploys", m.cur)
+		t.Fatalf("enter on the overview opens %+v, want shop deploys", m.cur)
 	}
 	m = press(m, "l")
 	if m.cur.tab != tLogs || len(m.stack) != 1 {
@@ -47,16 +47,16 @@ func TestEscGoesBackOneLevelAndQQuitsOnlyTheDashboard(t *testing.T) {
 		t.Fatalf("esc goes back to shop logs, got %+v", m.cur)
 	}
 	m, cmd := update(m, keyMsg("q"))
-	if quits(cmd) || m.cur.v != vDash {
+	if quits(cmd) || m.cur.v != vOverview {
 		t.Fatalf("q in an app goes back, got %+v quit=%v", m.cur, quits(cmd))
 	}
 	m = press(m, "esc")
-	if m.cur.v != vDash {
-		t.Fatal("esc on the dashboard stays")
+	if m.cur.v != vOverview {
+		t.Fatal("esc on the overview stays")
 	}
 	_, cmd = update(m, keyMsg("q"))
 	if !quits(cmd) {
-		t.Error("q on the dashboard quits")
+		t.Error("q on the overview quits")
 	}
 	_, cmd = update(press(m, "enter"), keyMsg("ctrl+c"))
 	if !quits(cmd) {
@@ -83,7 +83,7 @@ func TestEscClosesALayerBeforeItGoesBack(t *testing.T) {
 	}
 }
 
-func TestDashboardTabMovesBetweenPanels(t *testing.T) {
+func TestOverviewTabMovesBetweenPanels(t *testing.T) {
 	m := fixture(120, 40)
 	m = press(m, "down", "down")
 	if m.sel["apps"] != 2 {
@@ -119,7 +119,7 @@ func TestPaletteListsWhatIsHereFirstWithItsKeys(t *testing.T) {
 	m := press(fixture(120, 40), "space")
 	for _, h := range m.hits() {
 		if h.Item.kind == "section" || h.Item.kind == "action" {
-			t.Fatalf("on the dashboard nothing typed lists places only, got %s %q", h.Item.kind, h.Item.title)
+			t.Fatalf("on the overview nothing typed lists places only, got %s %q", h.Item.kind, h.Item.title)
 		}
 	}
 	m = press(m, "b", "l", "o", "g", "enter")
@@ -528,11 +528,11 @@ func TestLoginShowsTheCodeThenConnects(t *testing.T) {
 	api, _ := client.New(client.Config{URL: "https://moin.example", Token: "pat_x"})
 	m, cmd := update(m, signedInMsg{api: api})
 	if m.auth != nil || m.api == nil || cmd == nil {
-		t.Fatal("a sign-in lands on the dashboard and loads it")
+		t.Fatal("a sign-in lands on the overview and loads it")
 	}
 	_, cmd = update(m, keyMsg("esc"))
 	if quits(cmd) {
-		t.Error("esc on the dashboard does not quit")
+		t.Error("esc on the overview does not quit")
 	}
 }
 

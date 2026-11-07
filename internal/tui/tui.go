@@ -1,5 +1,5 @@
 // Package tui is what `moin` opens without a command: full-screen views of
-// the daily work, live from the control plane. It starts on the dashboard;
+// the daily work, live from the control plane. It starts on the overview;
 // `space`, `ctrl+k` or `/` opens the palette, `esc` goes back.
 //
 // tui.go holds the state and the message loop, keys.go the keys, load.go
@@ -62,7 +62,7 @@ func Run(ctx context.Context, opts Options) error {
 type view int
 
 const (
-	vDash view = iota
+	vOverview view = iota
 	vApp
 	vDeploy
 	vExec
@@ -187,7 +187,7 @@ type model struct {
 	cur   screen
 	stack []screen
 	sel   map[string]int
-	focus int // the dashboard panel with the cursor
+	focus int // the overview panel with the cursor
 
 	app      appData
 	seen     map[string]appData // what other apps showed when you left them
@@ -218,7 +218,7 @@ func newModel(ctx context.Context, opts Options) model {
 	return model{
 		ctx: ctx, url: opts.Config.URL, dir: opts.Dir, login: opts.Login,
 		hub: make(chan tea.Msg, 256), w: 100, h: 30, pal: dark, now: time.Now,
-		cur: screen{v: vDash}, sel: map[string]int{}, seen: map[string]appData{}, cpu: map[string][]float64{}, usage: map[string]*client.ServerMetricsNow{},
+		cur: screen{v: vOverview}, sel: map[string]int{}, seen: map[string]appData{}, cpu: map[string][]float64{}, usage: map[string]*client.ServerMetricsNow{},
 		auth: &auth{},
 	}
 }
@@ -394,7 +394,7 @@ func (m model) tick() (tea.Model, tea.Cmd) {
 	if every(60) {
 		cmds = append(cmds, m.loadStatus(), m.loadEvents(""))
 	}
-	if every(30) && m.cur.v == vDash {
+	if every(30) && m.cur.v == vOverview {
 		cmds = append(cmds, m.loadUsage()...)
 	}
 	switch m.cur.v {
@@ -477,13 +477,13 @@ func (m model) show(s screen) (model, tea.Cmd) {
 	return m, m.enter()
 }
 
-// back goes one level up; on the dashboard it stays.
+// back goes one level up; on the overview it stays.
 func (m model) back() (model, tea.Cmd) {
 	if len(m.stack) == 0 {
-		if m.cur.v == vDash {
+		if m.cur.v == vOverview {
 			return m, nil
 		}
-		return m.show(screen{v: vDash})
+		return m.show(screen{v: vOverview})
 	}
 	s := m.stack[len(m.stack)-1]
 	m.stack = m.stack[:len(m.stack)-1]
@@ -491,9 +491,9 @@ func (m model) back() (model, tea.Cmd) {
 }
 
 // home empties the stack.
-func (m model) home() (model, tea.Cmd) {
+func (m model) openOverview() (model, tea.Cmd) {
 	m.stack = nil
-	return m.show(screen{v: vDash})
+	return m.show(screen{v: vOverview})
 }
 
 // openApp opens an app at a tab; inside the same app it only switches.
@@ -518,7 +518,7 @@ func (m model) enter() tea.Cmd {
 		return nil
 	}
 	switch m.cur.v {
-	case vDash:
+	case vOverview:
 		return tea.Batch(append(m.loadUsage(), m.loadStatus(), m.loadEvents(""))...)
 	case vApp:
 		return tea.Batch(m.loadDetail(m.cur.app), m.openTab())
