@@ -247,11 +247,11 @@ func TestUptimeSwitch(t *testing.T) {
 	}
 }
 
-// The instant password switch answers the routing panel as stored.
+// The instant password switch answers the domains section as stored.
 func TestInstantPasswordSwitch(t *testing.T) {
 	s := newSwitches(t)
-	path := "/app/" + s.ada.Workspace.Slug + "/apps/blog/routing/instant-password"
-	pattern := "/app/{workspaceSlug}/apps/{app}/routing/instant-password"
+	path := "/app/" + s.ada.Workspace.Slug + "/apps/blog/domains/instant-password"
+	pattern := "/app/{workspaceSlug}/apps/{app}/domains/instant-password"
 	for _, on := range []bool{false, true} {
 		form := url.Values{"password": {"1"}}
 		if on {

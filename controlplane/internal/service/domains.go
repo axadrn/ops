@@ -233,9 +233,9 @@ func (s *AppService) instantHost(app *model.App, server *model.Server) string {
 	return protocol.InstantHost(app.Name, ipv4, app.Instant)
 }
 
-// instantRouting fills the instant address of a deploy: the provider, the
+// fillInstant fills the instant address of a deploy: the provider, the
 // server's IPv4 and the password in front of it.
-func (s *AppService) instantRouting(app *model.App, routing *protocol.Routing) error {
+func (s *AppService) fillInstant(app *model.App, domains *protocol.Domains) error {
 	server, err := s.servers.servers.ByIDOrNameForWorkspace(app.ServerID, app.WorkspaceID)
 	if err != nil {
 		return err
@@ -243,15 +243,15 @@ func (s *AppService) instantRouting(app *model.App, routing *protocol.Routing) e
 	if app.Instant == "off" || server.Tunnel {
 		return nil
 	}
-	routing.Instant = app.Instant
-	routing.InstantIP, _ = ServerAddresses(*server)
-	if routing.InstantIP == "" {
+	domains.Instant = app.Instant
+	domains.InstantIP, _ = ServerAddresses(*server)
+	if domains.InstantIP == "" {
 		return nil
 	}
 	switch {
 	case app.InstantOpen:
 	case app.Protect != "":
-		routing.InstantProtect = app.Protect
+		domains.InstantProtect = app.Protect
 	default:
 		password, err := s.instantPassword(app)
 		if err != nil {
@@ -261,10 +261,10 @@ func (s *AppService) instantRouting(app *model.App, routing *protocol.Routing) e
 		if err != nil {
 			return err
 		}
-		routing.InstantProtect = instantUser + ":" + string(hash)
+		domains.InstantProtect = instantUser + ":" + string(hash)
 	}
 	// The address the app gets, until the deploy reports the one it serves.
-	if host := protocol.InstantHost(app.Name, routing.InstantIP, app.Instant); host != app.InstantHost && app.LiveNumber == 0 {
+	if host := protocol.InstantHost(app.Name, domains.InstantIP, app.Instant); host != app.InstantHost && app.LiveNumber == 0 {
 		_ = s.apps.SetInstantHost(app.ID, host)
 	}
 	return nil
@@ -285,8 +285,8 @@ func (s *AppService) instantPassword(app *model.App) (string, error) {
 	return password, nil
 }
 
-// serviceRouting is the domains of the app's other services for a deploy.
-func serviceRouting(app *model.App) map[string][]string {
+// serviceDomains is the domains of the app's other services for a deploy.
+func serviceDomains(app *model.App) map[string][]string {
 	services := app.ServiceDomainMap()
 	if len(services) == 0 {
 		return nil

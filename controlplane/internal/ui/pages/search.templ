@@ -143,7 +143,7 @@ func SearchItems(in SearchInput) []SearchItem {
 func paletteActions(in SearchInput, app model.App) []SearchItem {
 	path := in.Base + "/apps/" + app.Name
 	var items []SearchItem
-	for _, domain := range appAddresses(app) {
+	for _, domain := range appDomains(app) {
 		items = append(items, SearchItem{Group: groupActions, Title: "Open " + domain, Where: app.Name, Icon: kit.IconExternal, Href: "https://" + domain, External: true})
 		break
 	}
@@ -169,7 +169,7 @@ func sectionIcon(id string) func(string) templ.Component {
 	switch id {
 	case "deploys":
 		return kit.IconDeploy
-	case "addresses":
+	case "domains":
 		return kit.IconGlobe
 	case "logs":
 		return kit.IconLogs

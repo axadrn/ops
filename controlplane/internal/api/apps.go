@@ -676,7 +676,7 @@ func (h *AppsHandler) DeleteRegistry(w http.ResponseWriter, r *http.Request) {
 	NoContent(w)
 }
 
-// Change is the answer to a routing change: the app, and the deploy that
+// Change is the answer to a change of the domains: the app, and the deploy that
 // applies it to the running release, or null when the next deploy will.
 // Unchanged is set when the app had it so already; nothing restarts.
 type Change struct {
@@ -847,7 +847,7 @@ func (h *AppsHandler) DeleteProtection(w http.ResponseWriter, r *http.Request) {
 	h.change(w, workspace.ID, r.PathValue("app"), nil, changed)
 }
 
-// Restart starts the live release again with the env and routing as they
+// Restart starts the live release again with the env and domains as they
 // are now.
 func (h *AppsHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	deploy, err := h.apps.Restart(actor(r), r.PathValue("app"))

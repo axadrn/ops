@@ -394,14 +394,14 @@ func (s *AppService) Redeploy(actor Actor, idOrName string) (*model.Deploy, erro
 	return nil, ErrNoSource
 }
 
-// Restart starts the live release again with the env and routing as they
+// Restart starts the live release again with the env and domains as they
 // are now, without a build.
 func (s *AppService) Restart(actor Actor, idOrName string) (*model.Deploy, error) {
 	return s.apply(actor, "app.restarted", idOrName)
 }
 
 // Start runs a stopped app again. Like a restart, it takes the env and
-// routing as they are now. An app that runs already stays as it is.
+// domains as they are now. An app that runs already stays as it is.
 func (s *AppService) Start(actor Actor, idOrName string) (*model.Deploy, error) {
 	app, err := s.apps.ByIDOrNameForWorkspace(idOrName, actor.WorkspaceID)
 	if err != nil {
@@ -496,7 +496,7 @@ func (s *AppService) setMainDomains(actor Actor, idOrName string, domains []stri
 	}
 	before := strings.Join(app.DomainList(), ", ")
 	body, _ := json.Marshal(clean)
-	err = s.apps.SetRouting(app.ID, string(body), canonical)
+	err = s.apps.SetDomains(app.ID, string(body), canonical)
 	if err != nil {
 		return false, err
 	}
@@ -869,8 +869,8 @@ func (s *AppService) start(actor Actor, action string, app *model.App, deploy *m
 		return nil, err
 	}
 	start.DeployID, start.App, start.AppID, start.Number = deploy.ID, app.Name, app.ID, deploy.Number
-	start.Routing = &protocol.Routing{Domains: app.DomainList(), Canonical: app.Canonical, Protect: app.Protect, Services: serviceRouting(app)}
-	err = s.instantRouting(app, start.Routing)
+	start.Domains = &protocol.Domains{Domains: app.DomainList(), Canonical: app.Canonical, Protect: app.Protect, Services: serviceDomains(app)}
+	err = s.fillInstant(app, start.Domains)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,7 @@ import (
 // with the env it had. Image replaces the build of the main service with an
 // image built elsewhere, such as in CI; without a source the agent takes the
 // compose file of the running release. Without source, image and FromNumber
-// the deploy applies env and routing to the running release, without a
+// the deploy applies env and domains to the running release, without a
 // build.
 type DeployStart struct {
 	DeployID string `json:"deploy_id"`
@@ -38,14 +38,14 @@ type DeployStart struct {
 	Image        string            `json:"image,omitempty"`
 	Registry     *Registry         `json:"registry,omitempty"`
 	Env          map[string]string `json:"env,omitempty"`
-	Routing      *Routing          `json:"routing,omitempty"`
+	Domains      *Domains          `json:"routing,omitempty"`
 }
 
-// Routing is how visitors reach the main service, as set in web, CLI, TUI
+// Domains is how visitors reach the main service, as set in web, CLI, TUI
 // or MCP. The x-moin block of compose.yml wins for every field it sets.
 // Protect is an htpasswd line ("user:bcrypt hash") when password protection
 // is on.
-type Routing struct {
+type Domains struct {
 	Domains   []string `json:"domains,omitempty"`
 	Canonical string   `json:"canonical,omitempty"`
 	Protect   string   `json:"protect,omitempty"`

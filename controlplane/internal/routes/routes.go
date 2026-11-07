@@ -247,7 +247,7 @@ func workspaceRoutes(mux *http.ServeMux, app *app.App, emailChanges, limitInvita
 	mux.HandleFunc("POST /app/{workspaceSlug}/workspace/delete", workspace(workspaceHandler.Delete))
 }
 
-// appRoutes are the pages of servers and apps: deploys, routing, data,
+// appRoutes are the pages of servers and apps: deploys, domains, data,
 // backups, uptime, metrics, buckets, env, GitHub and the catalog.
 func appRoutes(mux *http.ServeMux, app *app.App, catalogPages *handler.CatalogHandler) {
 	workspace := inWorkspace(app)
@@ -277,7 +277,7 @@ func appRoutes(mux *http.ServeMux, app *app.App, catalogPages *handler.CatalogHa
 	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/deploys", workspace(apps.AppSection("deploys")))
 	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/deploys/{number}", workspace(apps.DeployPage))
 	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/deploys/{number}/log", workspace(apps.DeployLog))
-	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/addresses", workspace(apps.AppSection("addresses")))
+	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/domains", workspace(apps.AppSection("domains")))
 	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/settings", workspace(apps.AppSection("settings")))
 	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/detail", workspace(apps.Detail))
 	mux.HandleFunc("DELETE /app/{workspaceSlug}/apps/{app}", workspace(apps.Delete))
@@ -289,14 +289,14 @@ func appRoutes(mux *http.ServeMux, app *app.App, catalogPages *handler.CatalogHa
 	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/image", workspace(apps.DeployImage))
 	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/hook", workspace(apps.RotateHook))
 	mux.HandleFunc("DELETE /app/{workspaceSlug}/apps/{app}/hook", workspace(apps.RemoveHook))
-	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/routing", workspace(apps.Routing))
-	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/routing/add", workspace(apps.AddDomain))
-	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/routing/remove", workspace(apps.RemoveDomain))
-	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/routing/canonical", workspace(apps.MakeCanonical))
-	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/routing/protect", workspace(apps.Protect))
-	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/routing/unprotect", workspace(apps.Unprotect))
-	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/routing/instant", workspace(apps.SetInstant))
-	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/routing/instant-password", workspace(apps.SetInstantPassword))
+	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/domains/detail", workspace(apps.DomainsDetail))
+	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/domains/add", workspace(apps.AddDomain))
+	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/domains/remove", workspace(apps.RemoveDomain))
+	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/domains/canonical", workspace(apps.MakeCanonical))
+	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/domains/protect", workspace(apps.Protect))
+	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/domains/unprotect", workspace(apps.Unprotect))
+	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/domains/instant", workspace(apps.SetInstant))
+	mux.HandleFunc("POST /app/{workspaceSlug}/apps/{app}/domains/instant-password", workspace(apps.SetInstantPassword))
 	mux.HandleFunc("POST /app/{workspaceSlug}/settings/registries", workspace(apps.SetRegistry))
 	mux.HandleFunc("DELETE /app/{workspaceSlug}/settings/registries/{host}", workspace(apps.DeleteRegistry))
 	mux.HandleFunc("GET /app/{workspaceSlug}/apps/{app}/logs", workspace(apps.AppSection("logs")))

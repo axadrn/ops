@@ -22,7 +22,7 @@ var (
 )
 
 // Apps stores the apps of each workspace with everything that hangs off
-// them: deploys, env, routing, backups, buckets, GitHub links, registries,
+// them: deploys, env, domains, backups, buckets, GitHub links, registries,
 // uptime and metrics.
 type Apps struct {
 	db *sqlx.DB
@@ -220,8 +220,8 @@ func (r *Apps) DeleteRegistry(workspaceID, host string) error {
 	return nil
 }
 
-// SetRouting stores the domains (a JSON array) and the canonical domain.
-func (r *Apps) SetRouting(appID, domains, canonical string) error {
+// SetDomains stores the domains (a JSON array) and the canonical domain.
+func (r *Apps) SetDomains(appID, domains, canonical string) error {
 	_, err := r.db.Exec(`UPDATE apps SET domains = $1, canonical = $2 WHERE id = $3`, domains, canonical, appID)
 	return err
 }

@@ -10,7 +10,7 @@ import (
 
 // A canonical domain is for the main service only, here as in MCP, and
 // showing the password of an instant address needs a token that may write.
-func TestAppRoutingRules(t *testing.T) {
+func TestAppDomainsRules(t *testing.T) {
 	// Self-hosted, so the free plan may change apps.
 	saved := access.Product
 	access.Product = access.SelfHosted

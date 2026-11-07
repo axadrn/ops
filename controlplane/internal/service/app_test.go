@@ -466,8 +466,8 @@ func TestDomainsAndProtectionWaitForARestart(t *testing.T) {
 	}
 	var start protocol.DeployStart
 	agent.last(t, protocol.TypeDeployStart, &start)
-	if start.Routing == nil || len(start.Routing.Domains) != 2 || start.Routing.Domains[0] != "blog.de" || start.Routing.Canonical != "blog.de" {
-		t.Fatalf("routing = %+v", start.Routing)
+	if start.Domains == nil || len(start.Domains.Domains) != 2 || start.Domains.Domains[0] != "blog.de" || start.Domains.Canonical != "blog.de" {
+		t.Fatalf("domains = %+v", start.Domains)
 	}
 	agentSays(t, servers, server.ID, protocol.TypeDeployDone, protocol.DeployDone{DeployID: first.ID, OK: true})
 	waiting := func() int {
@@ -518,7 +518,7 @@ func TestDomainsAndProtectionWaitForARestart(t *testing.T) {
 	}
 	start = protocol.DeployStart{}
 	agent.last(t, protocol.TypeDeployStart, &start)
-	if start.SourceURL != "" || start.Image != "" || !strings.HasPrefix(start.Routing.Protect, "me:$2a$") || len(start.Routing.Domains) != 1 {
+	if start.SourceURL != "" || start.Image != "" || !strings.HasPrefix(start.Domains.Protect, "me:$2a$") || len(start.Domains.Domains) != 1 {
 		t.Fatalf("restart deploy.start = %+v", start)
 	}
 	agentSays(t, servers, server.ID, protocol.TypeDeployDone, protocol.DeployDone{DeployID: restarted.ID, OK: true})
@@ -666,7 +666,7 @@ func TestStopStartAndRestart(t *testing.T) {
 	}
 	var start protocol.DeployStart
 	agent.last(t, protocol.TypeDeployStart, &start)
-	if start.SourceURL != "" || start.Image != "" || start.FromNumber != 0 || len(start.Routing.Domains) != 1 {
+	if start.SourceURL != "" || start.Image != "" || start.FromNumber != 0 || len(start.Domains.Domains) != 1 {
 		t.Fatalf("start deploy.start = %+v", start)
 	}
 	if app, _ := apps.Get(owner.WorkspaceID, "blog"); app.Stopped {

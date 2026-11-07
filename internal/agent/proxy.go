@@ -23,19 +23,19 @@ const proxyImage = "traefik:v3.6"
 
 var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 
-// route settles the routing of a release: x-moin wins for every field it
+// route settles the domains of a deploy: x-moin wins for every field it
 // sets, the control plane's settings fill the rest. Domains are the main
 // service's; ServiceDomains those of the others; Instant its instant
 // address.
-func route(app string, detected protocol.Detected, routing *protocol.Routing) (protocol.Detected, error) {
-	if routing == nil {
-		routing = &protocol.Routing{}
+func route(app string, detected protocol.Detected, domains *protocol.Domains) (protocol.Detected, error) {
+	if domains == nil {
+		domains = &protocol.Domains{}
 	}
 	config := detected.Config
 	if config == nil {
 		config = &protocol.Config{}
 	}
-	detected.Domains = slices.Clone(routing.Domains)
+	detected.Domains = slices.Clone(domains.Domains)
 	if len(config.Domains) > 0 {
 		detected.Domains = slices.Clone(config.Domains)
 	}
@@ -44,7 +44,7 @@ func route(app string, detected protocol.Detected, routing *protocol.Routing) (p
 		detected.Domains = slices.Clone(main)
 	}
 	detected.ServiceDomains = map[string][]string{}
-	for service, list := range routing.Services {
+	for service, list := range domains.Services {
 		if service != detected.Service {
 			detected.ServiceDomains[service] = slices.Clone(list)
 		}
@@ -62,11 +62,11 @@ func route(app string, detected protocol.Detected, routing *protocol.Routing) (p
 	if len(detected.ServiceDomains) == 0 {
 		detected.ServiceDomains = nil
 	}
-	detected.Canonical = routing.Canonical
+	detected.Canonical = domains.Canonical
 	if config.Canonical != "" {
 		detected.Canonical = config.Canonical
 	}
-	detected.Protected = routing.Protect != "" || config.Protect
+	detected.Protected = domains.Protect != "" || config.Protect
 	seen := map[string]bool{}
 	clean := func(list []string) error {
 		for index, domain := range list {
@@ -93,10 +93,10 @@ func route(app string, detected protocol.Detected, routing *protocol.Routing) (p
 	if detected.Canonical != "" && !slices.Contains(detected.Domains, detected.Canonical) {
 		return detected, fmt.Errorf("canonical domain %s is not one of the domains", detected.Canonical)
 	}
-	if config.Protect && routing.Protect == "" {
+	if config.Protect && domains.Protect == "" {
 		return detected, errors.New("x-moin.protect is on but no password is set: set one with moin protect")
 	}
-	provider := routing.Instant
+	provider := domains.Instant
 	switch config.Instant {
 	case "":
 	case "off":
@@ -107,23 +107,23 @@ func route(app string, detected protocol.Detected, routing *protocol.Routing) (p
 		}
 		provider = config.Instant
 	}
-	detected.Instant = protocol.InstantHost(app, routing.InstantIP, provider)
+	detected.Instant = protocol.InstantHost(app, domains.InstantIP, provider)
 	return detected, nil
 }
 
-func protectHash(routing *protocol.Routing) string {
-	if routing == nil {
+func protectHash(domains *protocol.Domains) string {
+	if domains == nil {
 		return ""
 	}
-	return routing.Protect
+	return domains.Protect
 }
 
-// addRouting puts a service of app on the proxy network and labels its routes:
+// addRouters puts a service of app on the proxy network and labels its routes:
 // every domain over HTTPS, the other domains redirecting to the canonical
 // one, and basic auth when a password is set. name names its router, such
 // as moin-shop for the main service; instant, when set, is the instant
 // address on a router of its own, with instantProtect in front of it.
-func addRouting(config, service map[string]any, app, name string, domains []string, canonical string, port int, protect, instant, instantProtect string) {
+func addRouters(config, service map[string]any, app, name string, domains []string, canonical string, port int, protect, instant, instantProtect string) {
 	labels := map[string]any{
 		"traefik.enable":         "true",
 		"traefik.docker.network": proxyNetwork,

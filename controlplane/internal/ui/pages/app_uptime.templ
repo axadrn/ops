@@ -27,7 +27,7 @@ templ AppUptime(view UptimeView) {
 	{{ appPath := ctxkeys.AppBasePath(ctx) + "/apps/" + view.App.Name }}
 	@layouts.App(view.App.Name + " uptime") {
 		@panelPage(templ.Attributes{"data-app-uptime": view.App.Name}) {
-			@kit.Header(kit.Back{Label: "Domains", Href: appPath + "/addresses"}, "Uptime")
+			@kit.Header(kit.Back{Label: "Domains", Href: appPath + "/domains"}, "Uptime")
 			<div id="app-uptime" class="flex flex-col gap-6">
 				@uptimeServerOffline(view)
 				if len(view.Uptime.Domains) == 0 {

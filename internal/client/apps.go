@@ -334,7 +334,7 @@ type DomainCheck struct {
 	Service string `json:"service"`
 }
 
-// Change is the app after a routing change, and the deploy that applies it,
+// Change is the app after a change of the domains, and the deploy that applies it,
 // nil when the next deploy will.
 type Change struct {
 	App    App     `json:"app"`
@@ -415,7 +415,7 @@ func (c *Client) RemoveProtection(ctx context.Context, app string) (Change, erro
 	return response, err
 }
 
-// Restart starts the live release again with the env and routing as they
+// Restart starts the live release again with the env and domains as they
 // are now.
 func (c *Client) Restart(ctx context.Context, app string) (Deploy, error) {
 	var response Deploy

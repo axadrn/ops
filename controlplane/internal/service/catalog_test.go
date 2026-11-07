@@ -80,7 +80,7 @@ func TestCatalogInstall(t *testing.T) {
 	}
 	var start protocol.DeployStart
 	agent.last(t, protocol.TypeDeployStart, &start)
-	if start.SourceURL == "" || start.SHA256 == "" || start.Env["VERSION"] != "3.4.1" || start.Routing == nil || len(start.Routing.Domains) != 1 {
+	if start.SourceURL == "" || start.SHA256 == "" || start.Env["VERSION"] != "3.4.1" || start.Domains == nil || len(start.Domains.Domains) != 1 {
 		t.Errorf("deploy start = %+v", start)
 	}
 	if len(bucket.objects) != 1 {

@@ -128,16 +128,16 @@ type AppPageView struct {
 	App     model.App
 	Deploys []api.Deploy
 	EnvKeys []string
-	// Section is app, deploys, addresses, logs or settings; data has its
+	// Section is app, deploys, domains, logs or settings; data has its
 	// own page.
 	Section string
 	// Catalog is the update card of a catalog app (App section), Uptime the
-	// checks of its domains (Addresses): filled for the section that shows
+	// checks of its domains (Domains): filled for the section that shows
 	// them, so the page comes whole.
 	Catalog *CatalogUpdateView
 	Uptime  *UptimeView
-	// Routing is the domains, instant address and password (Domains).
-	Routing *RoutingView
+	// Domains is the domains, instant address and password.
+	Domains *DomainsView
 	// Selected is the deploy whose log the Deploys section shows; 0 shows
 	// the newest and follows the next one that starts.
 	Selected int
@@ -160,8 +160,8 @@ templ AppPage(view AppPageView) {
 				switch view.Section {
 					case "deploys":
 						@appDeploysSection(app, view.Deploys, view.Selected, view.Selected == 0, view.Repo)
-					case "addresses":
-						@appAddressesSection(view)
+					case "domains":
+						@appDomainsSection(view)
 					case "logs":
 						@appLogsSection(app, view.Deploys, view.Logs)
 					case "settings":
@@ -199,15 +199,15 @@ templ appHomeSection(view AppPageView) {
 	<div class="hidden sm:block">
 		@kit.Section("Domains", nil) {
 			@kit.List() {
-				for _, address := range appAddresses(app) {
-					@kit.RowExternal("https://" + address) {
-						@kit.RowText(address, "")
+				for _, domain := range appDomains(app) {
+					@kit.RowExternal("https://" + domain) {
+						@kit.RowText(domain, "")
 					}
 				}
-				if len(appAddresses(app)) == 0 {
+				if len(appDomains(app)) == 0 {
 					@kit.RowControl(nil) {
 						@kit.RowText("No domain yet", "")
-						@kit.Button(kit.Secondary, appPath+"/addresses", nil) {
+						@kit.Button(kit.Secondary, appPath+"/domains", nil) {
 							Add a domain
 						}
 					}
@@ -237,15 +237,15 @@ func appSectionValue(app model.App, deploys []api.Deploy, id string) string {
 			return "none yet"
 		}
 		return fmt.Sprintf("%d", len(deploys))
-	case "addresses":
-		addresses := appAddresses(app)
-		if len(addresses) == 0 {
+	case "domains":
+		domains := appDomains(app)
+		if len(domains) == 0 {
 			return "none yet"
 		}
-		if len(addresses) > 1 {
-			return fmt.Sprintf("%s +%d", addresses[0], len(addresses)-1)
+		if len(domains) > 1 {
+			return fmt.Sprintf("%s +%d", domains[0], len(domains)-1)
 		}
-		return addresses[0]
+		return domains[0]
 	case "settings":
 		if app.ChangesWaiting > 0 {
 			return changesWaiting(app.ChangesWaiting)
@@ -254,14 +254,14 @@ func appSectionValue(app model.App, deploys []api.Deploy, id string) string {
 	return ""
 }
 
-// appAddresses are where the app answers: its domains, then its instant
+// appDomains are where the app answers: its domains, then its instant
 // address.
-func appAddresses(app model.App) []string {
-	addresses := app.DomainList()
+func appDomains(app model.App) []string {
+	domains := app.DomainList()
 	if app.InstantHost != "" {
-		addresses = append(addresses, app.InstantHost)
+		domains = append(domains, app.InstantHost)
 	}
-	return addresses
+	return domains
 }
 
 // appDeploysSection answers "how does code get in?": the versions, the log
@@ -279,11 +279,11 @@ templ appDeploysSection(app model.App, deploys []api.Deploy, selected int, follo
 	@appCI(app.Name, app.DeployHookHash != nil)
 }
 
-// appAddressesSection answers "where is it reached?": the instant address
+// appDomainsSection answers "where is it reached?": the instant address
 // and the domains in one place, with the password and the uptime checks.
-templ appAddressesSection(view AppPageView) {
-	if view.Routing != nil {
-		@AppRouting(*view.Routing)
+templ appDomainsSection(view AppPageView) {
+	if view.Domains != nil {
+		@AppDomains(*view.Domains)
 	}
 	if view.Uptime != nil {
 		@AppUptimeBody(*view.Uptime)

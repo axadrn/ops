@@ -311,7 +311,7 @@ func (a *apps) fetch(ctx context.Context, start *protocol.DeployStart, release s
 // writeCompose routes the app, writes compose.json, checks its databases and
 // makes sure the proxy runs when the app has an address.
 func (a *apps) writeCompose(ctx context.Context, start protocol.DeployStart, config map[string]any, detected protocol.Detected, running map[string]string, composeFile string, logf func(string, ...any)) (protocol.Detected, error) {
-	detected, err := route(start.App, detected, start.Routing)
+	detected, err := route(start.App, detected, start.Domains)
 	if err != nil {
 		return detected, err
 	}
@@ -347,7 +347,7 @@ func (a *apps) build(ctx context.Context, start protocol.DeployStart, config map
 			logf("→ Railpack: %s", detected.Builder)
 		}
 	} else {
-		logf("applying env and routing to the running images")
+		logf("applying env and domains to the running images")
 	}
 	if !builds(config) {
 		return nil
@@ -737,7 +737,7 @@ func loadBase(release string) (map[string]any, protocol.Detected, map[string]str
 // finish writes compose.json for a release: built services get an image tag
 // per deploy, or keep their running image when there is no source; the main
 // service runs start.Image when set; the app's services get the env; the
-// main service gets the routing labels; every service restarts unless
+// main service gets the router labels; every service restarts unless
 // stopped.
 func finish(base map[string]any, start protocol.DeployStart, detected protocol.Detected, running map[string]string, composeFile string) error {
 	body, err := json.Marshal(base)
@@ -782,16 +782,16 @@ func finish(base map[string]any, start protocol.DeployStart, detected protocol.D
 		switch {
 		case name == detected.Service && (len(detected.Domains) > 0 || detected.Instant != ""):
 			instantProtect := ""
-			if start.Routing != nil {
-				instantProtect = start.Routing.InstantProtect
+			if start.Domains != nil {
+				instantProtect = start.Domains.InstantProtect
 			}
-			addRouting(config, service, start.App, project(start.App), detected.Domains, detected.Canonical, detected.Port, protectHash(start.Routing), detected.Instant, instantProtect)
+			addRouters(config, service, start.App, project(start.App), detected.Domains, detected.Canonical, detected.Port, protectHash(start.Domains), detected.Instant, instantProtect)
 		case len(detected.ServiceDomains[name]) > 0:
 			canonical := ""
 			if slices.Contains(detected.ServiceDomains[name], detected.Canonical) {
 				canonical = detected.Canonical
 			}
-			addRouting(config, service, start.App, serviceRouter(start.App, name), detected.ServiceDomains[name], canonical, servicePort(name, service, detected.Config), protectHash(start.Routing), "", "")
+			addRouters(config, service, start.App, serviceRouter(start.App, name), detected.ServiceDomains[name], canonical, servicePort(name, service, detected.Config), protectHash(start.Domains), "", "")
 		}
 	}
 	body, err = json.MarshalIndent(config, "", "  ")

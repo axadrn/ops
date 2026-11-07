@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// RoutingView is what the Domains section shows.
-type RoutingView struct {
+// DomainsView is what the Domains section shows.
+type DomainsView struct {
 	App model.App
 	// Checks are the domains; only one added or checked was looked up
 	// (Checked), opening the page looks up none.
@@ -20,37 +20,37 @@ type RoutingView struct {
 	Instant service.Instant
 }
 
-// AppRouting is where an app is reached: its domains, the instant address
+// AppDomains is where an app is reached: its domains, the instant address
 // and the password in front of it. A domain says whether it points at the
 // server once it was added or checked; opening the page waits on no DNS.
-templ AppRouting(view RoutingView) {
-	{{ routingPath := ctxkeys.AppBasePath(ctx) + "/apps/" + view.App.Name + "/routing" }}
-	<div id="app-routing" class="flex flex-col gap-6">
+templ AppDomains(view DomainsView) {
+	{{ domainsPath := ctxkeys.AppBasePath(ctx) + "/apps/" + view.App.Name + "/domains" }}
+	<div id="app-domains" class="flex flex-col gap-6">
 		@kit.Section("Domains", nil) {
 			@kit.List() {
 				for _, check := range view.Checks {
-					@domainRow(check, view.App.Name, routingPath)
+					@domainRow(check, view.App.Name, domainsPath)
 				}
 				if options := canonicalOptions(view.Checks); len(options) > 2 && !fromCompose(view.Checks) {
-					@canonicalRow(options, view.App.Canonical, routingPath)
+					@canonicalRow(options, view.App.Canonical, domainsPath)
 				}
 				if fromCompose(view.Checks) {
 					@kit.RowAttrs("", templ.Attributes{"data-domains-from-compose": true}) {
 						<p class="min-w-0 flex-1 text-sm text-muted-foreground">Change them in compose.yml (<span class="font-mono">x-moin.domains</span>) and deploy.</p>
 					}
 				} else {
-					@addDomainRow(routingPath)
+					@addDomainRow(domainsPath)
 				}
 			}
 		}
-		@instantSection(view, routingPath)
-		@passwordSection(view.App, routingPath)
+		@instantSection(view, domainsPath)
+		@passwordSection(view.App, domainsPath)
 	</div>
 }
 
 // canonicalRow picks the domain the others redirect to; it saves itself.
-templ canonicalRow(options []kit.Option, canonical, routingPath string) {
-	@kit.RowForm(templ.Attributes{"hx-post": routingPath + "/canonical", "hx-trigger": "change", "hx-target": "#app-routing", "hx-swap": "outerHTML", "data-canonical": true}) {
+templ canonicalRow(options []kit.Option, canonical, domainsPath string) {
+	@kit.RowForm(templ.Attributes{"hx-post": domainsPath + "/canonical", "hx-trigger": "change", "hx-target": "#app-domains", "hx-swap": "outerHTML", "data-canonical": true}) {
 		@kit.CSRF()
 		@kit.RowLabel("canonical-domain", "Canonical", "")
 		<div class="w-44 shrink-0 sm:w-64">
@@ -63,7 +63,7 @@ templ canonicalRow(options []kit.Option, canonical, routingPath string) {
 // (canonical, a service, from compose.yml), what its DNS says once checked,
 // and its actions. On a phone the actions go under the name when they do
 // not fit next to it.
-templ domainRow(check service.DomainCheck, appName, routingPath string) {
+templ domainRow(check service.DomainCheck, appName, domainsPath string) {
 	@kit.RowControl(templ.Attributes{"data-domain": check.Domain}) {
 		<div class="min-w-36 flex-1">
 			<a href={ templ.SafeURL("https://" + check.Domain) } target="_blank" rel="noopener" class="block truncate font-medium underline-offset-4 hover:underline">{ check.Domain }</a>
@@ -91,8 +91,8 @@ templ domainRow(check service.DomainCheck, appName, routingPath string) {
 		</div>
 		<div class="flex items-center gap-2">
 			@kit.Button(kit.Secondary, "", templ.Attributes{
-				"hx-get":     routingPath + "?check=" + check.Domain,
-				"hx-target":  "#app-routing",
+				"hx-get":     domainsPath + "/detail?check=" + check.Domain,
+				"hx-target":  "#app-domains",
 				"hx-swap":    "outerHTML",
 				"hx-disable": "this",
 				"aria-label": "Check the DNS of " + check.Domain,
@@ -105,9 +105,9 @@ templ domainRow(check service.DomainCheck, appName, routingPath string) {
 					type="button"
 					aria-label={ "Remove " + check.Domain }
 					title={ "Remove " + check.Domain }
-					hx-post={ routingPath + "/remove" }
+					hx-post={ domainsPath + "/remove" }
 					hx-vals={ `{"domain": "` + check.Domain + `", "service": "` + check.Service + `"}` }
-					hx-target="#app-routing"
+					hx-target="#app-domains"
 					hx-swap="outerHTML"
 					hx-disable="this"
 					hx-confirm={ "Remove " + check.Domain + "? " + appName + " stops answering on it at the next restart." }
@@ -123,8 +123,8 @@ templ domainRow(check service.DomainCheck, appName, routingPath string) {
 
 // addDomainRow is the field that adds a domain, to the main service or to
 // another service of compose.yml.
-templ addDomainRow(routingPath string) {
-	@kit.RowForm(templ.Attributes{"hx-post": routingPath + "/add", "hx-target": "#app-routing", "hx-swap": "outerHTML", "hx-disable": "find button[type='submit']"}) {
+templ addDomainRow(domainsPath string) {
+	@kit.RowForm(templ.Attributes{"hx-post": domainsPath + "/add", "hx-target": "#app-domains", "hx-swap": "outerHTML", "hx-disable": "find button[type='submit']"}) {
 		@kit.CSRF()
 		<div class="min-w-0 flex-1 pb-2">
 			@kit.Field("Add a domain", "domain-name", "") {
@@ -145,13 +145,13 @@ templ addDomainRow(routingPath string) {
 
 // instantSection is the instant address: a switch, where it is or why the
 // app has none, its provider and its password.
-templ instantSection(view RoutingView, routingPath string) {
+templ instantSection(view DomainsView, domainsPath string) {
 	{{ instant := view.Instant }}
 	{{ on := instant.Provider != "" && instant.Provider != "off" }}
 	@kit.Section("Instant address", nil) {
 		<div data-instant>
 			@kit.List() {
-				@kit.RowForm(templ.Attributes{"hx-post": routingPath + "/instant", "hx-trigger": "change", "hx-target": "#app-routing", "hx-swap": "outerHTML", "hx-disable": "find input[type='checkbox']"}) {
+				@kit.RowForm(templ.Attributes{"hx-post": domainsPath + "/instant", "hx-trigger": "change", "hx-target": "#app-domains", "hx-swap": "outerHTML", "hx-disable": "find input[type='checkbox']"}) {
 					@kit.CSRF()
 					<input type="hidden" name="switch" value="1"/>
 					<div class="min-w-0 flex-1">
@@ -166,7 +166,7 @@ templ instantSection(view RoutingView, routingPath string) {
 					@kit.Switch(templ.Attributes{"id": "instant-on", "name": "on", "value": "1", "checked": on, "aria-label": "Instant address", "data-instant-switch": true})
 				}
 				if on {
-					@kit.RowForm(templ.Attributes{"hx-post": routingPath + "/instant", "hx-trigger": "change", "hx-target": "#app-routing", "hx-swap": "outerHTML", "data-instant-provider": true}) {
+					@kit.RowForm(templ.Attributes{"hx-post": domainsPath + "/instant", "hx-trigger": "change", "hx-target": "#app-domains", "hx-swap": "outerHTML", "data-instant-provider": true}) {
 						@kit.CSRF()
 						@kit.RowLabel("instant-provider", "Provider", "")
 						<div class="w-36 shrink-0">
@@ -174,7 +174,7 @@ templ instantSection(view RoutingView, routingPath string) {
 						</div>
 					}
 					if instant.URL != "" {
-						@kit.RowForm(templ.Attributes{"hx-post": routingPath + "/instant-password", "hx-trigger": "change", "hx-target": "#app-routing", "hx-swap": "outerHTML", "hx-disable": "find input[type='checkbox']"}) {
+						@kit.RowForm(templ.Attributes{"hx-post": domainsPath + "/instant-password", "hx-trigger": "change", "hx-target": "#app-domains", "hx-swap": "outerHTML", "hx-disable": "find input[type='checkbox']"}) {
 							@kit.CSRF()
 							<input type="hidden" name="password" value="1"/>
 							@kit.RowLabel("instant-password-on", "Password", instantSignIn(instant))
@@ -186,7 +186,7 @@ templ instantSection(view RoutingView, routingPath string) {
 									<span class="min-w-0 flex-1 truncate font-mono text-sm select-all" data-instant-password>{ instant.Password }</span>
 								}
 							} else {
-								@kit.RowButton(false, templ.Attributes{"hx-get": routingPath + "?show=true", "hx-target": "#app-routing", "hx-swap": "outerHTML", "hx-disable": "this", "data-instant-show": true}) {
+								@kit.RowButton(false, templ.Attributes{"hx-get": domainsPath + "/detail?show=true", "hx-target": "#app-domains", "hx-swap": "outerHTML", "hx-disable": "this", "data-instant-show": true}) {
 									<span class="font-medium">Show password</span>
 								}
 							}
@@ -200,7 +200,7 @@ templ instantSection(view RoutingView, routingPath string) {
 
 // passwordSection is the password in front of the app: off, a switch
 // opens its fields; on, who signs in and Remove.
-templ passwordSection(app model.App, routingPath string) {
+templ passwordSection(app model.App, domainsPath string) {
 	@kit.Section("Password", nil) {
 		if app.Protect != "" {
 			@kit.List() {
@@ -209,8 +209,8 @@ templ passwordSection(app model.App, routingPath string) {
 					<span class="text-sm text-muted-foreground" data-protected>On</span>
 				}
 				@kit.RowButton(true, templ.Attributes{
-					"hx-post":        routingPath + "/unprotect",
-					"hx-target":      "#app-routing",
+					"hx-post":        domainsPath + "/unprotect",
+					"hx-target":      "#app-domains",
 					"hx-swap":        "outerHTML",
 					"hx-disable":     "this",
 					"hx-confirm":     "Remove the password? Anyone with the link can open " + app.Name + " after the next restart.",
@@ -222,7 +222,7 @@ templ passwordSection(app model.App, routingPath string) {
 		} else {
 			@kit.List() {
 				@kit.RowMore("Ask for a password") {
-					@kit.RowForm(templ.Attributes{"id": "protect-form", "hx-post": routingPath + "/protect", "hx-target": "#app-routing", "hx-swap": "outerHTML", "hx-disable": "find button[type='submit']"}) {
+					@kit.RowForm(templ.Attributes{"id": "protect-form", "hx-post": domainsPath + "/protect", "hx-target": "#app-domains", "hx-swap": "outerHTML", "hx-disable": "find button[type='submit']"}) {
 						@kit.CSRF()
 						<div class="flex min-w-0 flex-1 flex-col gap-4 pt-1 pb-2">
 							<div class="grid gap-4 sm:grid-cols-2">

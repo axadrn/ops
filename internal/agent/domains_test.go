@@ -11,8 +11,8 @@ import (
 // the map form of x-moin, x-moin winning per service; the main service's
 // entry of the map is its domains; a domain on two services fails.
 func TestRouteServices(t *testing.T) {
-	routing := &protocol.Routing{Domains: []string{"shop.com"}, Services: map[string][]string{"api": {"API.shop.com"}, "admin": {"admin.shop.com"}}}
-	detected, err := route("shop", protocol.Detected{Service: "web", Config: &protocol.Config{ServiceDomains: map[string][]string{"admin": {"desk.shop.com"}}}}, routing)
+	domains := &protocol.Domains{Domains: []string{"shop.com"}, Services: map[string][]string{"api": {"API.shop.com"}, "admin": {"admin.shop.com"}}}
+	detected, err := route("shop", protocol.Detected{Service: "web", Config: &protocol.Config{ServiceDomains: map[string][]string{"admin": {"desk.shop.com"}}}}, domains)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,12 +23,12 @@ func TestRouteServices(t *testing.T) {
 	if err != nil || !slices.Equal(detected.Domains, []string{"x.com"}) || len(detected.ServiceDomains) != 1 {
 		t.Errorf("map form with the main service: %v %v %v", detected.Domains, detected.ServiceDomains, err)
 	}
-	if _, err := route("shop", protocol.Detected{Service: "web"}, &protocol.Routing{Domains: []string{"x.com"}, Services: map[string][]string{"api": {"x.com"}}}); err == nil {
+	if _, err := route("shop", protocol.Detected{Service: "web"}, &protocol.Domains{Domains: []string{"x.com"}, Services: map[string][]string{"api": {"x.com"}}}); err == nil {
 		t.Error("a domain on two services passed")
 	}
 	// The control plane's settings are not changed by route.
-	if routing.Services["api"][0] != "API.shop.com" {
-		t.Errorf("route changed the routing it was given: %v", routing.Services)
+	if domains.Services["api"][0] != "API.shop.com" {
+		t.Errorf("route changed the domains it was given: %v", domains.Services)
 	}
 }
 
@@ -47,20 +47,20 @@ func TestRouteInstant(t *testing.T) {
 		{"sslip.io", "", "2a01:4f8::1", "", false},
 		{"sslip.io", "example.com", "203.0.113.7", "", true},
 	} {
-		detected, err := route("shop", protocol.Detected{Service: "web", Config: &protocol.Config{Instant: test.xops}}, &protocol.Routing{Instant: test.provider, InstantIP: test.ip})
+		detected, err := route("shop", protocol.Detected{Service: "web", Config: &protocol.Config{Instant: test.xops}}, &protocol.Domains{Instant: test.provider, InstantIP: test.ip})
 		if (err != nil) != test.fails || detected.Instant != test.want {
 			t.Errorf("%+v: instant %q, err %v", test, detected.Instant, err)
 		}
 	}
 }
 
-// TestRoutingByService: the main service routes its domains and, on a router
+// TestDomainsByService: the main service routes its domains and, on a router
 // of its own, the instant address with its password; another service gets
 // its own router and port, and the app's password.
-func TestRoutingByService(t *testing.T) {
+func TestDomainsByService(t *testing.T) {
 	config := map[string]any{}
 	web := map[string]any{}
-	addRouting(config, web, "shop", project("shop"), []string{"shop.com"}, "", 3000, "", "shop.203-0-113-7.sslip.io", "moin:$2y$05$abc")
+	addRouters(config, web, "shop", project("shop"), []string{"shop.com"}, "", 3000, "", "shop.203-0-113-7.sslip.io", "moin:$2y$05$abc")
 	labels := web["labels"].(map[string]any)
 	for key, want := range map[string]string{
 		"traefik.http.routers.moin-shop.rule":                             "Host(`shop.com`)",
@@ -79,13 +79,13 @@ func TestRoutingByService(t *testing.T) {
 	}
 	// An app with only its instant address has no router for domains.
 	only := map[string]any{}
-	addRouting(config, only, "idea", project("idea"), nil, "", 8080, "", "idea.203-0-113-7.sslip.io", "")
+	addRouters(config, only, "idea", project("idea"), nil, "", 8080, "", "idea.203-0-113-7.sslip.io", "")
 	labels = only["labels"].(map[string]any)
 	if labels["traefik.http.routers.moin-idea.rule"] != nil || labels["traefik.http.routers.moin-idea-instant.rule"] != "Host(`idea.203-0-113-7.sslip.io`)" || labels["traefik.http.routers.moin-idea-instant.middlewares"] != nil {
 		t.Errorf("instant only: %v", labels)
 	}
 	api := map[string]any{}
-	addRouting(config, api, "shop", serviceRouter("shop", "api"), []string{"api.shop.com"}, "", 9000, "me:$2y$05$x", "", "")
+	addRouters(config, api, "shop", serviceRouter("shop", "api"), []string{"api.shop.com"}, "", 9000, "me:$2y$05$x", "", "")
 	labels = api["labels"].(map[string]any)
 	if labels["traefik.http.routers.moin-shop-svc-api.rule"] != "Host(`api.shop.com`)" || labels["traefik.http.services.moin-shop-svc-api.loadbalancer.server.port"] != "9000" || labels["traefik.http.routers.moin-shop-svc-api.middlewares"] != "moin-shop-svc-api-auth" {
 		t.Errorf("api labels: %v", labels)

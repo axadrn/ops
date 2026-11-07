@@ -26,12 +26,12 @@ func TestProxyFlags(t *testing.T) {
 	}
 }
 
-// TestRoutingLeavesTLSToTheEntrypoint: a router with a TLS section of its
+// TestRoutersLeaveTLSToTheEntrypoint: a router with a TLS section of its
 // own ignores the entrypoint's, certresolver included, so Let's Encrypt was
 // never asked for a new domain. The router sets none.
-func TestRoutingLeavesTLSToTheEntrypoint(t *testing.T) {
+func TestRoutersLeaveTLSToTheEntrypoint(t *testing.T) {
 	service := map[string]any{}
-	addRouting(map[string]any{}, service, "shop", project("shop"), []string{"shop.example.com"}, "", 8080, "", "", "")
+	addRouters(map[string]any{}, service, "shop", project("shop"), []string{"shop.example.com"}, "", 8080, "", "", "")
 	labels, _ := service["labels"].(map[string]any)
 	if len(labels) == 0 {
 		t.Fatalf("no labels: %v", service)

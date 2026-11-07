@@ -48,7 +48,7 @@ Legal basis: the contract with you (Art. 6(1)(b) GDPR).
 To run your apps moin stores:
 
 - **Servers**: name, hostname, operating system, architecture, agent version, firewall and security settings, and the IP addresses of the server. The agent token is stored as a hash.
-- **Apps**: name, domains, routing settings, deploy history with its logs, what the agent detected about the app (such as its services, port and SQLite databases), and the status of its backups.
+- **Apps**: name, domains and their settings, deploy history with its logs, what the agent detected about the app (such as its services, port and SQLite databases), and the status of its backups.
 - **GitHub**: if you connect the moin GitHub App, the installation and its account name, the repo and branch of each app, and the commit of each deploy.
 - **Code**: never. `moin deploy` puts your code into your own bucket through a link moin signs, and your server deletes it there after downloading. Deploys from GitHub go from GitHub straight to your server.
 - **Secrets**: env vars, registry passwords, the secret key of your backup bucket, your Cloudflare API token, Cloudflare tunnel tokens and your Tailscale auth key are encrypted with AES-256-GCM before they are stored. Deploy hook tokens are stored as SHA-256 hashes, protection passwords as bcrypt hashes.

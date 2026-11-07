@@ -76,7 +76,7 @@ type DomainsInput struct {
 	Service   string   `json:"service,omitempty" jsonschema:"a service of compose.yml other than the main one, to set its domains; empty for the main one"`
 }
 
-// Change is the output of routing changes.
+// Change is the output of changes of the domains.
 type Change struct {
 	api.Change
 }

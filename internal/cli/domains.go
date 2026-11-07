@@ -317,7 +317,7 @@ func protect(ctx context.Context, args []string, stdin io.Reader, stdout io.Writ
 	return nil
 }
 
-// restart starts the live release again with the env and routing as they
+// restart starts the live release again with the env and domains as they
 // are now; start runs a stopped app the same way.
 func restart(ctx context.Context, command string, args []string, stdout io.Writer) error {
 	flags := newFlags(command, command+" [app]").withApp()
