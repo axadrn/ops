@@ -5,7 +5,7 @@ group: "Start"
 order: 5
 ---
 
-Self-hosting means you run the control plane yourself, on your own server, instead of using ours. All of moin is open source under AGPL-3.0, so you get the product we host: every feature, unlimited servers, apps and teammates, no license key, no account with us.
+Self-hosting means you run the control plane, the moin web app and API, on your own server instead of using ours. All of moin is open source under AGPL-3.0, so you get the product we host: every feature, unlimited servers, apps and teammates, no license key, no account with us.
 
 ## One server
 
@@ -53,6 +53,21 @@ The rest of these docs apply as they are.
 ## Two servers
 
 Once it matters, run the control plane on its own small server, not next to your apps. The agent on an app server takes ports 80 and 443, and a control plane apart from them keeps working when an app server fails or is broken into: you can still restore, roll back and see what happened. It needs no SSH key to your app servers: their agents dial out to it.
+
+```text
+one server          two servers
+
+┌───────────────┐   ┌───────────────┐
+│ control plane │   │ control plane │
+│ agent         │   └───────▲───────┘
+│ your apps     │           │ agents
+└───────────────┘           │ call out
+                    ┌───────┴───────┐
+                    │ app server    │
+                    │ agent         │
+                    │ your apps     │
+                    └───────────────┘
+```
 
 You need a small Ubuntu or Debian server and a domain for it, an S3-compatible bucket, Cloudflare Email Sending for sign-in links and invitations, and, if you like, a Cloudflare Tunnel and [your own GitHub App](#your-own-github-app).
 

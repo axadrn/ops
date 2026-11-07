@@ -24,6 +24,23 @@ All of it is open source under AGPL-3.0, in one repo: [github.com/axadrn/moin](h
 
 The agent on your server calls moin; moin never calls your server. Nothing on the server waits for moin, so it needs no open port for it, and moin holds no SSH key to it.
 
+```text
+SSH tools          moin
+
+the tool           control plane
+ │ holds a key      ▲
+ │ to a root shell  │ the agent
+ ▼                  │ calls out
+┌──────────┐       ┌┴─────────┐
+│ server   │       │ server   │
+│ port 22  │       │ agent    │
+│ is open  │       │ no port  │
+│          │       │ for moin │
+└──────────┘       └──────────┘
+```
+
+moin's requests come back down the line the agent opened, and the agent checks each one against your rules.
+
 With the three switches of [Security](/docs/guides/security) on, the server can close almost everything:
 
 | Switch | What closes |

@@ -5,7 +5,25 @@ group: "Apps"
 order: 3
 ---
 
-Env vars are the settings and secrets your app reads when it starts, such as `DATABASE_URL` or an API key. moin keeps them encrypted and hands them to every service of the app on the next restart, start or deploy.
+Env vars are the settings and secrets your app reads when it starts, such as `DATABASE_URL` or an API key. moin keeps them encrypted and hands them to your app on the next restart, start or deploy.
+
+```text
+moin env set KEY=value
+   │
+   ▼
+control plane  saved encrypted;
+   │           the change waits
+   │
+   │ moin restart, start or deploy
+   ▼
+agent          sets them on the
+   │           app's services
+   ▼
+your app       reads KEY when it
+               starts
+```
+
+They go to the services moin builds and the main one. An image you do not build, such as Postgres, takes them with `${NAME}`: [In compose.yml](#in-composeyml).
 
 ## Set an env var
 

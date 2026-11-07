@@ -5,6 +5,8 @@ group: "Reference"
 order: 6
 ---
 
+The questions people ask most, each with a short answer and a link to the page that says more.
+
 ## Does my server need open ports?
 
 Not for moin: the agent dials out. Visitors reach your apps on ports 80 and 443, and with a [Cloudflare Tunnel](/docs/guides/security#cloudflare-tunnel) not even those are open.

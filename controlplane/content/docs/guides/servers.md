@@ -7,6 +7,19 @@ order: 1
 
 A server is your computer on the internet, and the agent is the little helper on it that does the work. The agent only calls out, so the server needs no open door for moin. Any Linux server at any provider works, amd64 or arm64, with systemd: Ubuntu and Debian are the easy choice.
 
+```text
+1 moin servers add web-1
+  ─▶ an install command
+2 run it on web-1, as root
+  ─▶ Docker and the agent
+3 the agent calls moin
+  ─▶ web-1 is online
+
+moin ◀──────────── agent on web-1
+  moin's requests come back on that
+  line; nothing on web-1 waits
+```
+
 ## Add a server
 
 Gives you one install command. Run it on the server as root within one hour.

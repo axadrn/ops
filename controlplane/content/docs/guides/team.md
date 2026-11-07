@@ -19,6 +19,24 @@ It lists the team and the invitations that wait for an answer.
 
 ## Roles
 
+Each role can do everything inside it:
+
+```text
+┌ owner ──────────────────────────┐
+│ also pays, makes owners,        │
+│ deletes the workspace           │
+│ ┌ admin ──────────────────────┐ │
+│ │ also invites, renames,      │ │
+│ │ changes roles               │ │
+│ │ ┌ member ─────────────────┐ │ │
+│ │ │ deploys, rolls back,    │ │ │
+│ │ │ restores, edits data,   │ │ │
+│ │ │ sees the activity       │ │ │
+│ │ └─────────────────────────┘ │ │
+│ └─────────────────────────────┘ │
+└─────────────────────────────────┘
+```
+
 | | Member | Admin | Owner |
 | --- | --- | --- | --- |
 | Deploy, roll back, edit data, restore, servers, domains, env | ✓ | ✓ | ✓ |

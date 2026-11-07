@@ -38,7 +38,31 @@ Set your own start command with the env var `RAILPACK_START_CMD`. `DATA_DIR=/dat
 
 ## What a deploy does
 
-It downloads the code, builds it on your server, starts it, checks it stays up and calls the health path; a failed start brings the last good deploy back. Step by step: [What a deploy does](/docs/concepts/how-moin-works#what-a-deploy-does).
+It downloads the code, builds it on your server, starts it, checks it stays up and calls the health path; a failed start brings the last good deploy back.
+
+```text
+your code   from a folder, GitHub
+   │        or CI
+   ▼
+build       on your server;
+   │        v2 keeps running
+   ▼
+start       v3 takes v2's place
+   │
+   ▼
+check       v3 runs 10 seconds
+   │        without a restart; the
+   │        health path, if set,
+   │        answers
+   ▼
+live ✓      v3 is live
+
+build fails: v2 never stopped.
+start or check fails: v2 starts
+again, v3 is marked failed.
+```
+
+Step by step: [What a deploy does](/docs/concepts/how-moin-works#what-a-deploy-does).
 
 ## See your apps
 

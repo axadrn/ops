@@ -7,6 +7,19 @@ order: 3
 
 The palette is a box in the middle of the screen: type what you want, press `enter`, and you are there. It is the same in the web and the terminal UI.
 
+```text
+⌘K
+ │
+ ▼
+┌────────────────────────────────┐
+│ shop lo                        │
+├────────────────────────────────┤
+│ ▸ Logs    shop               L │
+│   ...                          │
+└────────────────────────────────┘
+  ↓ ↑ pick   enter go   esc close
+```
+
 | Opens it | Where |
 | --- | --- |
 | `⌘K` · `ctrl+k` | the web; `ctrl+k` in the terminal UI too |

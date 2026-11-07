@@ -7,6 +7,18 @@ order: 2
 
 Your server has doors to the internet, called ports; moin can close all of them, so nobody from outside gets in. Three switches per server each close a door, and a file on the server decides what moin may do there. The agent only calls out, so moin itself needs no open door.
 
+```text
+outside                    server
+moin ◀──────────────────── agent
+visitors ─▶ Cloudflare ◀── cloudflared
+you, SSH ─▶ tailnet ◀───── Tailscale
+                           firewall:
+                           the rest
+                           is shut
+```
+
+Each line starts on your server and calls out. With all three switches on, only 41641/udp stays open to everyone: Tailscale's port for direct connections.
+
 | Switch | What it closes | Needs |
 | --- | --- | --- |
 | **Cloudflare Tunnel** | ports 80 and 443: visitors come through Cloudflare | your domains in a Cloudflare account |

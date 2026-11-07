@@ -7,6 +7,26 @@ order: 2
 
 A domain is the name people type to reach your app, like `shop.example.com`. Every app gets one right after its first deploy, its instant address; add your own when you are ready. HTTPS is always on.
 
+```text
+browser   opens shop.example.com
+   │
+   ▼
+DNS       shop.example.com is
+   │      203.0.113.7: your A record
+   ▼
+server    203.0.113.7, port 443
+   │
+   ▼
+Traefik   HTTPS with a Let's Encrypt
+   │      certificate; finds the app
+   │      by its domain
+   ▼
+app shop  on its port, 8080 unless
+          you say so
+```
+
+DNS is the phone book of the internet: it turns a name into the server's address. Behind a [Cloudflare Tunnel](/docs/guides/security#cloudflare-tunnel), the browser reaches Cloudflare instead, and Cloudflare passes the visit to Traefik through the tunnel.
+
 ## Add a domain
 
 Add one or several at once, such as the domain with and without `www.`:

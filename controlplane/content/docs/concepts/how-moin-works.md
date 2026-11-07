@@ -84,6 +84,23 @@ Builds run on **your** server.
 
 The control plane only relays messages. It never stores or runs your code.
 
+How `moin deploy` carries your code from your computer:
+
+```text
+1 computer  moin deploy packs your
+     │      folder and puts it into
+     ▼      your bucket
+2 bucket    keeps it for a moment
+     │
+     ▼
+3 server    the agent downloads it,
+            checks it, deletes it
+            from the bucket, builds it
+
+moin only signs the links: your
+code never passes through moin.
+```
+
 ### How moin builds a repo
 
 | The repo has | moin does |
@@ -100,7 +117,7 @@ Railpack finds the language and its version from `package.json`, `requirements.t
 1. Downloads the code from your bucket, or the commit from GitHub, checks it and keeps it with the deploy.
 2. Reads the compose file with `docker compose config`, together with the [x-moin block](/docs/guides/config).
 3. Tags the built images per deploy, sets the env vars and `restart: unless-stopped`.
-4. Builds, starts with `docker compose up --wait` and checks that the main service still runs 5 seconds later.
+4. Builds, starts with `docker compose up --wait` and checks that the main service runs for 10 seconds without a restart, within 30 seconds.
 5. Calls the health path, if x-moin sets one, until it answers below 500.
 6. Reports the SQLite databases on the app's volumes and the Postgres services in its compose file, for the [data browser](/docs/guides/data) and the [backups](/docs/guides/backups).
 7. Reports what it detected: kind, service, port, databases and the x-moin block. The app page, `moin deploy`, `moin apps <app>`, the TUI, the API and `get_app` show it.

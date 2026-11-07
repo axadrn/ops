@@ -5,7 +5,27 @@ group: "Apps"
 order: 5
 ---
 
-CI is a computer elsewhere, such as GitHub Actions, that builds your app for you: it builds an image and pushes it to a registry, and moin deploys it. The server only downloads and starts it. Good for heavy builds, build caches and many servers. Deploy the repo once with `moin deploy` first: an image deploy keeps that compose file and swaps only the image of the main service.
+CI is a computer elsewhere, such as GitHub Actions, that builds your app for you. It packs the app into an image, a box ready to run, and puts it on a registry, a shelf for images; moin deploys it. The server only downloads and starts it. Good for heavy builds, build caches and many servers. Deploy the repo once with `moin deploy` first: an image deploy keeps that compose file and swaps only the image of the main service.
+
+```text
+git push
+   │
+   ▼
+CI         builds the image and
+   │       puts it on a registry
+   │
+   │ calls the deploy hook
+   ▼
+moin       tells the agent
+   │
+   ▼
+agent      pulls the image from
+   │       the registry
+   ▼
+live ✓     started and checked
+```
+
+The deploy hook is a secret URL: when CI calls it, moin deploys the image.
 
 ## 1. Save a registry login
 

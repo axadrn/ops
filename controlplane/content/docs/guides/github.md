@@ -53,6 +53,25 @@ Empty means the linked branch. The API takes `{"ref": "v1.4.0"}`, or `{"ref": ""
 
 ## Deploy every push
 
+```text
+git push    to the branch the app
+   │        follows
+   ▼
+GitHub      tells moin
+   │
+   ▼
+moin        tells the agent
+   │
+   ▼
+agent       downloads the commit
+   │        from GitHub with a
+   │        short-lived token and
+   │        deploys it
+   ▼
+live ✓      the commit gets a green
+            check: moin/deploy
+```
+
 ```surfaces
 Web: the app's **Deploys** tab, **GitHub**, **Deploy every push**
 CLI: moin link <owner>/<repo> --auto=false

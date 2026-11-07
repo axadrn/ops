@@ -7,6 +7,22 @@ order: 3
 
 Run a command inside your app, as if you typed it on the server, and see what it prints: one command in a container of your app, its output as it comes and the exit code at the end. For migrations, the first admin user or a look at a file. No SSH, no key on your laptop.
 
+```text
+you: moin exec shop -- ls /data
+  │                       ▲
+  ▼                       │
+control plane             │
+  │                       │
+  ▼                       │
+agent, on the line        │
+it already has open       │
+  │                       │
+  ▼                       │
+container of shop ────────┘
+runs ls /data      what it prints,
+                   then the exit code
+```
+
 ## Run a command
 
 ```surfaces
