@@ -270,7 +270,7 @@ func (m model) appsPanel(u ui, w, h int, wide bool) string {
 	if wide {
 		cols = append(cols, u.head("server", 12, false))
 	}
-	cols = append(cols, u.head("address", 0, false))
+	cols = append(cols, u.head("domain", 0, false))
 	body := []string{u.row(cols, iw, false)}
 	n := h - chrome - 1
 	at := m.at("apps", len(m.apps))

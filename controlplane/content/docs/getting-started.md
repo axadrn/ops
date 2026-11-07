@@ -82,7 +82,7 @@ No Dockerfile needed: moin builds Node, Bun, Python, Ruby, PHP, Go and more, or 
 ## Good to know
 
 - `moin` lands in `/usr/local/bin`, or in `~/.local/bin` when that is not writable. Then add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` or `~/.profile`.
-- No browser on this machine, as over SSH? Open the address `moin login` prints on any other device and approve there.
+- No browser on this computer, as over SSH? Open the address `moin login` prints on any other device and approve there.
 - The login belongs to this computer and one workspace. It shows as **CLI on** and the computer's name under **Settings**, **Account**, **Tokens** tab, and ends after 90 days without use. See [Account and tokens](/docs/guides/account#log-in-the-cli).
 - With GitHub sign-in your name and workspace come from your GitHub profile; GitHub finds your account by any verified email on it. With email, moin sends a sign-in link and asks for both. An invited teammate only gives a name.
 - On a self-hosted control plane only the admins and invited teammates sign up: [Who signs in](/docs/self-hosting#who-signs-in).

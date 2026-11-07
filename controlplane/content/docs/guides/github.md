@@ -5,7 +5,7 @@ group: "Apps"
 order: 4
 ---
 
-Connect GitHub, and moin takes your code straight from it: link a repo to an app once, then deploy any branch, tag or commit with no checkout on your machine, and every push if you like. The pull request shows a green check, the commit status **moin/deploy**, when the deploy is live.
+Connect GitHub, and moin takes your code straight from it: link a repo to an app once, then deploy any branch, tag or commit with no checkout on your computer, and every push if you like. The pull request shows a green check, the commit status **moin/deploy**, when the deploy is live.
 
 ## Connect GitHub
 
@@ -26,7 +26,7 @@ Connecting always happens on github.com: the CLI, the API and MCP give you the l
 ```surfaces
 Web: the app's **Deploys** tab, **GitHub**, choose the repo and the branch, **Deploy**
 CLI: moin link <owner>/<repo> --branch main
-TUI: on the app, `W` opens its GitHub panel in the web
+TUI: on the app, `W` opens its GitHub card in the web
 API: PUT /api/v1/apps/{app}/repo
 MCP: link_repo
 ```
@@ -56,7 +56,7 @@ Empty means the linked branch. The API takes `{"ref": "v1.4.0"}`, or `{"ref": ""
 ```surfaces
 Web: the app's **Deploys** tab, **GitHub**, **Deploy every push**
 CLI: moin link <owner>/<repo> --auto=false
-TUI: on the app, `W` opens its GitHub panel in the web
+TUI: on the app, `W` opens its GitHub card in the web
 API: PUT /api/v1/apps/{app}/repo
 MCP: link_repo
 ```
@@ -69,7 +69,7 @@ MCP: link_repo
 Web: the app, **GitHub**; the **Branch** select after you choose the repo
 CLI: moin github repos
 CLI: moin github branches <owner>/<repo>
-TUI: on the app, `W` opens its GitHub panel in the web
+TUI: on the app, `W` opens its GitHub card in the web
 API: GET /api/v1/github/repos
 API: GET /api/v1/github/repos/{owner}/{repo}/branches
 MCP: list_repos
@@ -85,7 +85,7 @@ The app stops following the repo and keeps running.
 ```surfaces
 Web: the app's **Deploys** tab, **GitHub**, **Unlink**
 CLI: moin unlink
-TUI: on the app, `W` opens its GitHub panel in the web
+TUI: on the app, `W` opens its GitHub card in the web
 API: DELETE /api/v1/apps/{app}/repo
 MCP: unlink_repo
 ```

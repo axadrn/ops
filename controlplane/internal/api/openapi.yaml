@@ -43,7 +43,7 @@ security:
   - cookieAuth: []
 tags:
   - name: Meta
-    description: The API description, the project name and support address, and the CSRF token for cookie sessions.
+    description: The API description, the product name and support address, and the CSRF token for cookie sessions.
   - name: Auth
     description: Sign-in, onboarding and logout. Sign-in answers carry a bearer token and set no cookie, unless they ask for a cookie session with `session=cookie`.
   - name: Account
@@ -53,7 +53,7 @@ tags:
   - name: API tokens
     description: Personal API tokens of the signed-in account. Only a signed-in session manages them. Recovering the account with a forgot password link, changing, setting or removing the password, and an admin signing the user out everywhere revoke every token. Signing out other sessions keeps them.
   - name: Workspaces
-    description: Workspaces, members, invitations and activity.
+    description: Workspaces, the team, invitations and activity.
   - name: Invitations
     description: Workspace invitations opened with the token from the invitation email.
   - name: Billing
@@ -125,11 +125,11 @@ paths:
     get:
       tags: [Meta]
       operationId: getMeta
-      summary: Get the project name, support address and version
+      summary: Get the product name, support address and version
       security: []
       responses:
         '200':
-          description: Public facts about the project.
+          description: Public facts about the product.
           content:
             application/json:
               schema:
@@ -1066,7 +1066,7 @@ paths:
       tags: [Servers]
       operationId: deleteServer
       summary: Remove a server
-      description: Disconnects its agent. The agent token stops working. The agent stays installed on the machine until you run `uninstall_command` there; it is empty when no agent ever connected.
+      description: Disconnects its agent. The agent token stops working. The agent stays installed on the server until you run `uninstall_command` there; it is empty when no agent ever connected.
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -4043,7 +4043,7 @@ paths:
       tags: [Workspaces]
       operationId: listActivity
       summary: List activity
-      description: What happened in the workspace of the API token, newest first, the same as listWorkspaceActivity, for the CLI: deploys, rollbacks, restores, SQL writes, env, domains, servers, security and member changes. Pass `next_cursor` as `cursor` to read the next page.
+      description: What happened in the workspace of the API token, newest first, the same as listWorkspaceActivity, for the CLI: deploys, rollbacks, restores, SQL writes, env, domains, servers, security and team changes. Pass `next_cursor` as `cursor` to read the next page.
       parameters:
         - name: limit
           in: query
@@ -4676,7 +4676,7 @@ components:
       properties:
         name:
           type: string
-          description: The project name.
+          description: The product name.
         support_email:
           type: string
           format: email
@@ -5137,7 +5137,7 @@ components:
           type: array
           items:
             type: string
-          description: The apps that went with the server, because it was offline and could not remove them. They stay on the machine with their data if it comes back. Empty for an online server.
+          description: The apps that went with the server, because it was offline and could not remove them. They stay on the server with their data if it comes back. Empty for an online server.
         uninstall_command:
           type: string
           description: Run it on the server as root, or with sudo in front, to remove the agent, its binary and state. The apps keep running with their data; add `--apps` to remove them too. Empty when no agent ever connected, so nothing is installed there.
@@ -5916,7 +5916,7 @@ components:
           type: string
         bucket:
           type: string
-          description: The bucket's name at the storage provider.
+          description: The bucket's name at the provider.
         path:
           type: string
         folder:
@@ -6881,7 +6881,7 @@ components:
           type: array
           items:
             type: string
-          description: The old hosts the control plane still answers on.
+          description: The old domains the control plane still answers on.
         days:
           type: integer
           description: How many days rows reaches back.

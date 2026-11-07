@@ -1,6 +1,6 @@
 # moin design
 
-One product in four places: the landing page, the control panel, the TUI and
+One product in four places: the landing page, the control plane, the TUI and
 the CLI. They share these rules. Change a token here and in the code at once.
 
 ## Character

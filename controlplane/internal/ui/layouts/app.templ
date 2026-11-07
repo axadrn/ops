@@ -11,20 +11,20 @@ type Crumb struct {
 	Href  string
 }
 
-// AppProps is the shell of a control panel page.
+// AppProps is the shell of a control plane page.
 type AppProps struct {
 	Title  string
 	Crumbs []Crumb
 }
 
-// App is the control panel shell with the page title as the only crumb.
+// App is the control plane shell with the page title as the only crumb.
 templ App(title string) {
 	@AppShell(AppProps{Title: title}) {
 		{ children... }
 	}
 }
 
-// AppShell is the control panel: the bar on top, the page under it. No
+// AppShell is the control plane: the bar on top, the page under it. No
 // sidebar: the search in the bar goes everywhere (DESIGN.md, Navigation).
 // Every link loads a whole page; the browser keeps the old one on screen
 // until the new one is painted and fades between them (globals.css).
@@ -32,7 +32,7 @@ templ AppShell(p AppProps) {
 	{{ basePath := ctxkeys.AppBasePath(ctx) }}
 	@Base(SEOProps{
 		Title:       p.Title,
-		Description: "The moin control panel",
+		Description: "The moin control plane",
 		Path:        ctxkeys.URLPath(ctx),
 	}) {
 		@AppBar()

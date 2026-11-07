@@ -5,7 +5,7 @@ group: "Servers and data"
 order: 1
 ---
 
-A server is your computer on the internet, and the agent is the little helper on it that does the work. The agent only calls out, so the server needs no open door for moin. Any Linux machine at any provider works, amd64 or arm64, with systemd: Ubuntu and Debian are the easy choice.
+A server is your computer on the internet, and the agent is the little helper on it that does the work. The agent only calls out, so the server needs no open door for moin. Any Linux server at any provider works, amd64 or arm64, with systemd: Ubuntu and Debian are the easy choice.
 
 ## Add a server
 
@@ -51,7 +51,7 @@ A server offline for two minutes, and back online, mails the owners and admins (
 
 ## A new install command
 
-The install command shows once; moin keeps only a fingerprint of its token. Lost it, or moving the agent to another machine? Get a new one. It works once within one hour; the old command and the old agent's token stop working.
+The install command shows once; moin keeps only a fingerprint of its token. Lost it, or moving the agent to another server? Get a new one. It works once within one hour; the old command and the old agent's token stop working.
 
 ```surfaces
 Web: **Servers**, open the server, **New install command**
@@ -110,9 +110,9 @@ MCP: remove_server
 ```
 
 - **Online with apps**: refused. [Remove the apps](/docs/guides/deploy#remove-an-app) first, so nothing keeps running unseen.
-- **Offline**: it goes with its apps, and every surface and the activity name them. The apps stay on the machine with their data if it comes back.
+- **Offline**: it goes with its apps, and every surface and the activity name them. The apps stay on the server with their data if it comes back.
 
-The agent stays on the machine. Every surface answers the command that removes it (none if the agent never connected); run it on the server as root:
+The agent stays on the server. Every surface answers the command that removes it (none if the agent never connected); run it on the server as root:
 
 ```bash
 moin agent uninstall          # the agent goes, the apps keep running

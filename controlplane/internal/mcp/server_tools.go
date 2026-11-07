@@ -19,13 +19,13 @@ func registerServerTools(server *mcpsdk.Server, services Services) {
 		"Lists the user's servers with online status, OS, arch, agent version and rules: what the owner allows moin to do on each server, from /etc/moin/rules there. The agent refuses what its rules do not allow; nobody can change them through moin. Needs the read scope.",
 		readOnly("")), Read(member(services, tools.listServers)))
 	mcpsdk.AddTool(server, newTool("add_server", "Add a server",
-		"Adds a server and returns its one-time install command. The user runs it as root on the machine within an hour; the agent then connects. Needs a token with read and write access.",
+		"Adds a server and returns its one-time install command. The user runs it as root on the server within an hour; the agent then connects. Needs a token with read and write access.",
 		change(false, false)), Write(changes(services, tools.addServer)))
 	mcpsdk.AddTool(server, newTool("remove_server", "Remove a server",
-		"Removes a server and disconnects its agent. Fails with server_has_apps while it is online and has apps; an offline server goes with its apps, listed in apps, which stay on the machine if it comes back. The agent stays installed on the machine: returns uninstall_command, which the user runs on the server to remove it, empty when no agent ever connected; the apps there keep running with their data unless it gets --apps. Ask the user first: confirm must be the server's name, typed out. Needs a token with read and write access.",
+		"Removes a server and disconnects its agent. Fails with server_has_apps while it is online and has apps; an offline server goes with its apps, listed in apps, which stay on the server if it comes back. The agent stays installed on the server: returns uninstall_command, which the user runs on the server to remove it, empty when no agent ever connected; the apps there keep running with their data unless it gets --apps. Ask the user first: confirm must be the server's name, typed out. Needs a token with read and write access.",
 		change(true, true)), Write(changes(services, tools.removeServer)))
 	mcpsdk.AddTool(server, newTool("new_install_command", "New install command",
-		"Makes a new one-time install command for a server and returns it, for a lost command or to move the agent to another machine. It works once within an hour; moin stores only a fingerprint, so it is shown this once. The old install command stops working, and an agent that registers with the new one takes over from the old agent. Needs a token with read and write access.",
+		"Makes a new one-time install command for a server and returns it, for a lost command or to move the agent to another server. It works once within an hour; moin stores only a fingerprint, so it is shown this once. The old install command stops working, and an agent that registers with the new one takes over from the old agent. Needs a token with read and write access.",
 		change(true, false)), Write(changes(services, tools.newInstallCommand)))
 	mcpsdk.AddTool(server, newTool("rename_server", "Rename a server",
 		"Gives a server a new name, 1 to 63 lowercase letters, digits or dashes, starting with a letter or digit, unique in the workspace, and returns it. Its apps stay on it. Needs a token with read and write access.",
@@ -199,10 +199,10 @@ func (t moinTools) removeServer(_ context.Context, caller Caller, input RemoveSe
 	}
 	with := ""
 	if len(apps) > 0 {
-		with = " It was offline, so its apps went with it: " + strings.Join(apps, ", ") + ". They stay on the machine if it comes back."
+		with = " It was offline, so its apps went with it: " + strings.Join(apps, ", ") + ". They stay on the server if it comes back."
 	}
 	if command == "" {
-		removed.Message = "Removed server " + server.Name + "." + with + " Its agent never connected, so there is nothing to remove on the machine."
+		removed.Message = "Removed server " + server.Name + "." + with + " Its agent never connected, so there is nothing to remove on the server."
 		return removed, nil
 	}
 	removed.Message = "Removed server " + server.Name + "." + with + " Its agent is still installed: run " + command + " on the server as root (or with sudo in front) to remove it."

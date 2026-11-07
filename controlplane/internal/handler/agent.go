@@ -60,7 +60,7 @@ case "$(uname -m)" in
 	*) echo "Unsupported CPU: $(uname -m)" >&2; exit 1 ;;
 esac
 # The agent runs as a systemd service. Check before the token is used up.
-[ -d /run/systemd/system ] || { echo "The agent needs systemd, and this machine does not run it." >&2; exit 1; }
+[ -d /run/systemd/system ] || { echo "The agent needs systemd, and this server does not run it." >&2; exit 1; }
 # Apps run as Docker Compose projects.
 if ! docker compose version >/dev/null 2>&1; then
 	echo "Installing Docker…"
