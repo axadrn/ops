@@ -204,8 +204,9 @@ type runner struct {
 	backups   *backups
 	security  *security
 	updater   *updater
-	// deploying counts the deploys that run now; an update waits for them.
-	deploying atomic.Int32
+	// busy counts the deploys and restores that run now; an update waits
+	// for them.
+	busy atomic.Int32
 
 	mu   sync.Mutex
 	conn *websocket.Conn

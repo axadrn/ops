@@ -139,8 +139,8 @@ func (r *runner) deployStart(ctx context.Context, message protocol.Message, rule
 		return
 	}
 	slog.Info("deploy", "app", start.App, "number", start.Number)
-	r.deploying.Add(1)
-	defer r.deploying.Add(-1)
+	r.busy.Add(1)
+	defer r.busy.Add(-1)
 	r.apps.deploy(ctx, start)
 }
 

@@ -62,3 +62,13 @@ func TestUpdateSwapsAVerifiedBinary(t *testing.T) {
 		t.Fatalf("without systemd: %v", err)
 	}
 }
+
+// TestUpdateWaitsForARestore: a restore counts like a deploy, so an update
+// does not stop the agent in the middle of a swap. Without the wait it
+// would reach the updater, which this runner has none of.
+func TestUpdateWaitsForARestore(t *testing.T) {
+	r := &runner{pending: map[string]protocol.DeployDone{}}
+	r.busy.Add(1)
+	message, _ := protocol.NewMessage(protocol.TypeAgentUpdate, protocol.AgentUpdate{Version: "v9"})
+	r.agentUpdate(context.Background(), message, nil)
+}

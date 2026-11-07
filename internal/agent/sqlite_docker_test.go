@@ -5,10 +5,12 @@ package agent
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +62,24 @@ func TestSQLiteGoBack(t *testing.T) {
 	waitRecorded(t, b.engine(app, database), noted)
 	if got := rows(); got != "b,c,d" {
 		t.Fatalf("before the restore: %s", got)
+	}
+
+	// The app stops before the copy of now, so no write comes after it; a
+	// copy that fails starts the app again and changes nothing.
+	runningNow := func() bool {
+		out, _ := a.output(ctx, "docker", "compose", "-p", project(app), "-f", composeFile, "ps", "-q", "--status", "running")
+		return strings.TrimSpace(out) != ""
+	}
+	stoppedForCopy := false
+	err := b.engine(app, database).GoBack(ctx, moment{At: noted}, func() error {
+		stoppedForCopy = !runningNow()
+		return errors.New("injected")
+	})
+	if err == nil || !strings.Contains(err.Error(), "nothing changed") || !stoppedForCopy || !runningNow() {
+		t.Fatalf("a failed copy: %v, stopped for the copy %v, runs %v", err, stoppedForCopy, runningNow())
+	}
+	if got := rows(); got != "b,c,d" {
+		t.Fatalf("after a failed copy: %s", got)
 	}
 
 	if err := b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &noted}); err != nil {

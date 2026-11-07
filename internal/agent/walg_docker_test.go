@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,6 +44,8 @@ func TestPostgresGoBack(t *testing.T) {
 	}
 	compose := map[string]any{
 		"services": map[string]any{
+			// web stands for the app that writes to the database.
+			"web": map[string]any{"image": "alpine:latest", "command": []string{"sleep", "infinity"}, "init": true},
 			"db": map[string]any{
 				"image":       "postgres:17",
 				"environment": map[string]string{"POSTGRES_USER": "app", "POSTGRES_DB": "shop", "POSTGRES_PASSWORD": "secret"},
@@ -202,12 +205,54 @@ func TestPostgresGoBack(t *testing.T) {
 	// And back to the first noted minute once more.
 	goBack(protocol.BackupRestore{At: &noted}, "1:T1,2:T1")
 
+	// A restore that fails after the recovery: the copy of now comes once
+	// the app stopped writing, and when it fails the app runs again,
+	// nothing changed, and nothing in the bucket points to the timeline
+	// the recovery made. A restore to a later moment lands on it exactly.
+	webRuns := func() bool {
+		out, _ := a.output(ctx, "docker", "compose", "-p", project(app), "-f", composeFile, "ps", "-q", "--status", "running", "web")
+		return strings.TrimSpace(out) != ""
+	}
+	histories := func() int {
+		n := 0
+		b.walgList(ctx, app, database, func(name string, _ time.Time) {
+			if walgHistoryName.MatchString(name) {
+				n++
+			}
+		})
+		return n
+	}
+	before := histories()
+	stoppedForCopy := false
+	err = e.GoBack(ctx, moment{At: beforeFirst}, func() error {
+		stoppedForCopy = !webRuns()
+		return errors.New("injected")
+	})
+	if err == nil || !strings.Contains(err.Error(), "nothing changed") || !stoppedForCopy || !webRuns() {
+		t.Fatalf("a restore that fails after the recovery: %v, web stopped for the copy %v, runs %v", err, stoppedForCopy, webRuns())
+	}
+	if got := orders(); got != "1:T1,2:T1" {
+		t.Fatalf("after a failed restore: %s", got)
+	}
+	if after := histories(); after != before {
+		t.Fatalf("a failed restore left a timeline history in the bucket: %d before, %d after", before, after)
+	}
+	sql(`INSERT INTO orders VALUES (7, 'T4');`)
+	flush()
+	afterT4 := pause()
+	sql(`INSERT INTO orders VALUES (8, 'T5');`)
+	flush()
+	goBack(protocol.BackupRestore{At: &afterT4}, "1:T1,2:T1,7:T4")
+	if !webRuns() {
+		t.Fatal("web does not run after the restore")
+	}
+
 	// A moment to come is refused, and nothing changes.
 	future := time.Now().Add(time.Hour)
 	if err := b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &future}); err == nil {
 		t.Error("a restore to a moment to come worked")
 	}
-	if got := orders(); got != "1:T1,2:T1" {
+	if got := orders(); got != "1:T1,2:T1,7:T4" {
 		t.Fatalf("after a refused restore: %s", got)
 	}
 

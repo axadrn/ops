@@ -46,9 +46,27 @@ func (e *sqliteEngine) Record(ctx context.Context) error {
 	b, hostPath := e.b, e.database.HostPath
 	b.mu.Lock()
 	store := b.store
-	if store == nil {
+	if store == nil || b.restoring[key(e.app, e.database)] {
+		// A restore works on the file: it follows it again after.
 		b.mu.Unlock()
 		return nil
+	}
+	if b.clearFirst[hostPath] {
+		// The old history belongs to the file before a restore: it goes
+		// before Litestream starts the new one, or the new one would have
+		// no start of its own.
+		bucket, prefix, err := b.bucketOfLocked(e.app, e.database)
+		b.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		if err := replicaClientAt(bucket, prefix).DeleteAll(ctx); err != nil {
+			return fmt.Errorf("clear the history from before the restore: %w", err)
+		}
+		b.mu.Lock()
+		delete(b.clearFirst, hostPath)
+		b.mu.Unlock()
+		return e.Record(ctx)
 	}
 	prefix, err := b.prefix(e.app, e.database.Path)
 	if err != nil {
@@ -103,8 +121,8 @@ func (e *sqliteEngine) Record(ctx context.Context) error {
 }
 
 // GoBack restores the history, or the copy, into a file next to the
-// database and checks it. Only then it keeps the copy of now, stops the
-// app, swaps the file in and starts the app again. The history starts
+// database and checks it. Only then it stops the app, keeps the copy of
+// now, swaps the file in and starts the app again. The history starts
 // over from the restored file: the copy of now is how to undo it.
 func (e *sqliteEngine) GoBack(ctx context.Context, to moment, keep func() error) error {
 	b, hostPath := e.b, e.database.HostPath
@@ -123,38 +141,43 @@ func (e *sqliteEngine) GoBack(ctx context.Context, to moment, keep func() error)
 	if err := integrityCheck(ctx, restored); err != nil {
 		return fmt.Errorf("what came back failed the integrity check, nothing changed: %w", err)
 	}
-	if err := keep(); err != nil {
+	// The app stops first, so no write comes after the copy of now. From
+	// here on the restore ends what it started, also when the agent stops.
+	app := b.apps.stopper(ctx, e.app)
+	if err := app.stop(); err != nil {
 		return err
 	}
-	composeFile := filepath.Join(b.apps.releaseDir(e.app, b.apps.current(e.app)), "compose.json")
-	noLog := func(string, ...any) {}
-	if err := b.apps.compose(ctx, e.app, composeFile, noLog, "stop"); err != nil {
-		return fmt.Errorf("stop the app: %w", err)
+	if err := keep(); err != nil {
+		return app.startAfter(fmt.Errorf("%w; nothing changed", err))
 	}
+	ctx = context.WithoutCancel(ctx)
 	b.mu.Lock()
 	if b.store != nil {
 		_ = b.store.UnregisterDB(ctx, hostPath)
 	}
 	delete(b.watched, hostPath)
-	bucket := b.bucketFor(e.app)
-	prefix, prefixErr := b.prefix(e.app, e.database.Path)
+	if b.clearFirst == nil {
+		b.clearFirst = map[string]bool{}
+	}
+	b.clearFirst[hostPath] = true
+	bucket, prefix, prefixErr := b.bucketOfLocked(e.app, e.database)
 	b.mu.Unlock()
-	swapErr := swapDatabase(restored, hostPath)
+	if err := swapDatabase(restored, hostPath); err != nil {
+		return app.startAfter(fmt.Errorf("swap the database: %w", err))
+	}
 	// The history in the bucket belongs to the file before; Litestream
-	// starts it again from the restored one.
-	if swapErr == nil && prefixErr == nil && bucket != nil {
+	// starts it again from the restored one. If the bucket is out of
+	// reach now, Record clears it before it follows the file again.
+	if prefixErr == nil {
 		if err := replicaClientAt(bucket, prefix).DeleteAll(ctx); err != nil {
-			slog.Warn("backup: start the history again", "error", err)
+			slog.Warn("backup: clear the history from before the restore", "error", err)
+		} else {
+			b.mu.Lock()
+			delete(b.clearFirst, hostPath)
+			b.mu.Unlock()
 		}
 	}
-	startErr := b.apps.compose(ctx, e.app, composeFile, noLog, "start")
-	if swapErr != nil {
-		return fmt.Errorf("swap the database: %w; the copy before the restore has the state before", swapErr)
-	}
-	if startErr != nil {
-		return fmt.Errorf("start the app again: %w", startErr)
-	}
-	return nil
+	return app.startAfter(nil)
 }
 
 // restoreTo restores the history as it was at a moment into target.

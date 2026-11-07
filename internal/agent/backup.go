@@ -125,6 +125,12 @@ type backups struct {
 	walg walg
 	// recording keeps two rounds of Record apart.
 	recording sync.Mutex
+	// restoring are the databases a restore works on, by key: Record
+	// leaves them alone until it is done. clearFirst are the SQLite files
+	// whose old history in the bucket must go before Record follows them
+	// again.
+	restoring  map[string]bool
+	clearFirst map[string]bool
 }
 
 // check is the newest daily check of a database.
@@ -353,6 +359,11 @@ func sameBuckets(one, other map[string]*protocol.Bucket) bool {
 func (b *backups) bucketOf(app string, database protocol.Database) (*protocol.Bucket, string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.bucketOfLocked(app, database)
+}
+
+// bucketOfLocked is bucketOf for a caller that holds the lock.
+func (b *backups) bucketOfLocked(app string, database protocol.Database) (*protocol.Bucket, string, error) {
 	bucket := b.bucketFor(app)
 	if bucket == nil {
 		return nil, "", errors.New("backups are not set up")
@@ -506,6 +517,9 @@ func (r *runner) backupRestore(ctx context.Context, message protocol.Message) {
 		r.fail(message, err)
 		return
 	}
+	// An update waits for it, as for a deploy.
+	r.busy.Add(1)
+	defer r.busy.Add(-1)
 	if err := r.backups.restore(ctx, request); err != nil {
 		r.fail(message, err)
 		return
@@ -545,10 +559,30 @@ func (b *backups) restore(ctx context.Context, request protocol.BackupRestore) e
 		return errors.New("pick a moment to go back to")
 	}
 	defer b.apps.lock(request.App)()
+	k := key(request.App, database)
+	b.mu.Lock()
+	if b.restoring == nil {
+		b.restoring = map[string]bool{}
+	}
+	b.restoring[k] = true
+	b.mu.Unlock()
 	e := b.engine(request.App, database)
-	err = e.GoBack(ctx, to, func() error { return b.keepCopy(ctx, request.App, database, e) })
+	kept := ""
+	// Once the app stops, the restore ends what it started even when the
+	// agent shuts down: an update waits for it, a stop does not cut it.
+	err = e.GoBack(ctx, to, func() error {
+		id, err := b.keepCopy(context.WithoutCancel(ctx), request.App, database, e)
+		kept = id
+		return err
+	})
+	b.mu.Lock()
+	delete(b.restoring, k)
+	b.mu.Unlock()
 	b.reconcile()
 	if err != nil {
+		if kept != "" {
+			return fmt.Errorf("%w. The copy from before is undo-%s: going back to it puts the data back as it was", err, kept)
+		}
 		return err
 	}
 	slog.Info("backup: restored", "app", request.App, "database", database.Path, "at", request.At, "copy", request.Copy)
@@ -565,18 +599,18 @@ func copyExt(database protocol.Database) string {
 
 // keepCopy takes the one full copy of a database before a restore and
 // puts it in its before-restore folder.
-func (b *backups) keepCopy(ctx context.Context, app string, database protocol.Database, e engine) error {
+func (b *backups) keepCopy(ctx context.Context, app string, database protocol.Database, e engine) (string, error) {
 	bucket, prefix, err := b.bucketOf(app, database)
 	if err != nil {
-		return err
+		return "", err
 	}
 	id := time.Now().UTC().Format(protocol.CopyIDLayout)
 	_, err = b.upload(ctx, bucket, prefix+"/before-restore/"+id+copyExt(database), e)
 	if err != nil {
-		return fmt.Errorf("the copy before the restore: %w", err)
+		return "", fmt.Errorf("the copy before the restore: %w", err)
 	}
 	slog.Info("backup: copy before the restore", "app", app, "database", database.Path, "id", id)
-	return nil
+	return id, nil
 }
 
 // backupDownload answers backup.download (BackupRequest).
@@ -852,4 +886,42 @@ func sweepIn(ctx context.Context, bucket *protocol.Bucket, now time.Time) {
 			}
 		}
 	}
+}
+
+// appStop stops the services of an app for a restore, all of them without
+// services, and starts them again, always: also after a failed stop, and
+// with a context a shutting down agent does not cancel.
+type appStop struct {
+	a           *apps
+	ctx         context.Context
+	app         string
+	composeFile string
+	services    []string
+}
+
+func (a *apps) stopper(ctx context.Context, app string, services ...string) *appStop {
+	return &appStop{a: a, ctx: context.WithoutCancel(ctx), app: app, composeFile: filepath.Join(a.releaseDir(app, a.current(app)), "compose.json"), services: services}
+}
+
+// stop stops the services. When that fails it starts them again and says
+// nothing changed.
+func (s *appStop) stop() error {
+	err := s.a.compose(s.ctx, s.app, s.composeFile, func(string, ...any) {}, append([]string{"stop"}, s.services...)...)
+	if err != nil {
+		return s.startAfter(fmt.Errorf("stop the app: %w; nothing changed", err))
+	}
+	return nil
+}
+
+// startAfter starts the services again and adds a failure of that to err.
+func (s *appStop) startAfter(err error) error {
+	startErr := s.a.compose(s.ctx, s.app, s.composeFile, func(string, ...any) {}, append([]string{"start"}, s.services...)...)
+	if startErr != nil {
+		startErr = fmt.Errorf("start the app again: %w", startErr)
+		if err == nil {
+			return startErr
+		}
+		return fmt.Errorf("%w; %w", err, startErr)
+	}
+	return err
 }

@@ -186,7 +186,7 @@ func TestBackups(t *testing.T) {
 	}
 
 	// The copy before a restore lists, and a restore to it reads it back.
-	if err := b.keepCopy(ctx, app, database, e); err != nil {
+	if _, err := b.keepCopy(ctx, app, database, e); err != nil {
 		t.Fatal(err)
 	}
 	copies, err := b.copies(ctx, app, database)
@@ -545,5 +545,74 @@ func TestRestoreRefuses(t *testing.T) {
 		if err := b.restore(context.Background(), request); err == nil {
 			t.Errorf("restore %+v worked", request)
 		}
+	}
+}
+
+// TestRecordLeavesARestoreAlone: while a restore works on a file, Record
+// does not follow it again; after it, Record first clears the history from
+// before the restore, and follows the file only once that worked.
+func TestRecordLeavesARestoreAlone(t *testing.T) {
+	endpoint, bucketName := testS3(t)
+	ctx := context.Background()
+	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
+	b := newBackups(a, func(protocol.MessageType, string, any) {})
+	app := fmt.Sprintf("alone-%d", time.Now().UnixNano())
+	file, _ := sqliteApp(t, a, app, "app-1")
+	bucket := &protocol.Bucket{Endpoint: endpoint, Region: "us-east-1", Bucket: bucketName, Path: "alone", Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
+	if err := b.configure(ctx, bucket, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer b.configure(ctx, nil, nil)
+	database := a.runningDatabases(app)[0]
+	k := key(app, database)
+
+	// A restore works on it: the store let go of it, Record stays away.
+	b.mu.Lock()
+	b.restoring = map[string]bool{k: true}
+	delete(b.watched, file)
+	b.mu.Unlock()
+	b.recordAll(ctx)
+	if _, ok := b.watched[file]; ok {
+		t.Fatal("Record followed a file a restore works on")
+	}
+
+	// After the swap the old history goes first.
+	_, prefix, _ := b.bucketOf(app, database)
+	old := prefix + "/litestream/from-before"
+	client := s3Client(bucket)
+	if _, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucketName), Key: aws.String(old), Body: strings.NewReader("x")}); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	delete(b.restoring, k)
+	b.clearFirst = map[string]bool{file: true}
+	b.mu.Unlock()
+	b.reconcile()
+	if _, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucketName), Key: aws.String(old)}); err == nil {
+		t.Fatal("the history from before the restore is still there")
+	}
+	if _, ok := b.watched[file]; !ok || b.clearFirst[file] {
+		t.Fatalf("Record does not follow the file again: watched %v, clear first %v", b.watched, b.clearFirst)
+	}
+
+	// A bucket out of reach: Record says so and does not follow the file.
+	other := newBackups(newApps(t.TempDir(), nil), nil)
+	otherFile, _ := sqliteApp(t, other.apps, app, "app-1")
+	if err := other.configure(ctx, &protocol.Bucket{Endpoint: "http://127.0.0.1:1", Region: "us-east-1", Bucket: "none", Workspace: "ws", AccessKey: "x", SecretKey: "y"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer other.configure(ctx, nil, nil)
+	other.mu.Lock()
+	delete(other.watched, otherFile)
+	other.clearFirst = map[string]bool{otherFile: true}
+	other.mu.Unlock()
+	short, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err := other.engine(app, other.apps.runningDatabases(app)[0]).Record(short)
+	if err == nil || !strings.Contains(err.Error(), "clear the history from before the restore") {
+		t.Fatalf("Record against a bucket out of reach: %v", err)
+	}
+	if _, ok := other.watched[otherFile]; ok {
+		t.Fatal("Record follows the file before the old history is gone")
 	}
 }
