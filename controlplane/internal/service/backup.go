@@ -601,10 +601,13 @@ const RestoreNoWord = "Unknown how it ended"
 // reconcileRestores asks the agent of a server how the restores stand that
 // the control plane lost track of: those whose server went offline during
 // them, and those that ran when the control plane restarted. It runs when
-// the agent connects and every minute while one is unknown (RunRestores).
-// The agent writes a restore down the moment it arrives, so one it knows
-// nothing of never reached it. An agent that reports no restores at all
-// cannot say: the restore ends with that, and the app is to check.
+// the agent connects and every minute while one may still run
+// (RunRestores). It asks with backup.restores, which needs no bucket and
+// lists nothing in it, so an app without a bucket or one that is gone
+// still answers. The agent writes a restore down the moment it arrives,
+// so one it knows nothing of never reached it. An agent that reports no
+// restores at all cannot say: the restore ends with that, and the app is
+// to check.
 func (s *AppService) reconcileRestores(serverID string) {
 	restores, err := s.apps.ActiveRestoresOn(serverID)
 	if err != nil {
@@ -624,7 +627,13 @@ func (s *AppService) reconcileRestores(serverID string) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
 		var backups protocol.Backups
-		err = s.servers.Request(ctx, serverID, protocol.TypeBackupList, protocol.BackupRequest{App: app.Name}, &backups)
+		err = s.servers.Request(ctx, serverID, protocol.TypeBackupRestores, protocol.BackupRequest{App: app.Name}, &backups)
+		var agentErr *AgentError
+		if errors.As(err, &agentErr) {
+			// An agent before backup.restores.
+			backups = protocol.Backups{}
+			err = s.servers.Request(ctx, serverID, protocol.TypeBackupList, protocol.BackupRequest{App: app.Name}, &backups)
+		}
 		cancel()
 		if err != nil && len(backups.Restores) == 0 {
 			slog.Warn("ask how a restore stands failed", "id", restore.ID, "error", err)
@@ -646,9 +655,10 @@ func (s *AppService) reconcileRestores(serverID string) {
 // restores how they ended.
 const restoreAskEvery = time.Minute
 
-// RunRestores asks, every minute, the agents of restores whose server went
-// offline during them how they ended, once the server is back: the session
-// may come back without the agent having said a word yet.
+// RunRestores asks, every minute, the agents of restores that may still
+// run how they stand: one whose server went offline during it, once the
+// server is back, and one that runs while no request waits for it, as
+// after a restart of the control plane, whose last word may be lost.
 func (s *AppService) RunRestores(ctx context.Context) {
 	ticker := time.NewTicker(restoreAskEvery)
 	defer ticker.Stop()
@@ -662,10 +672,12 @@ func (s *AppService) RunRestores(ctx context.Context) {
 	}
 }
 
-// askUnknownRestores asks each server with an unknown restore that is
-// online.
+// askUnknownRestores asks each online server with a restore that may
+// still run: unknown, or running without a request that waits for it, as
+// after a restart of the control plane. Once one ends it is not asked
+// again.
 func (s *AppService) askUnknownRestores() {
-	servers, err := s.apps.UnknownRestoreServers()
+	servers, err := s.apps.ActiveRestoreServers()
 	if err != nil {
 		slog.Error("list the servers of unknown restores failed", "error", err)
 		return

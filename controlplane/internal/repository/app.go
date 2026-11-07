@@ -352,11 +352,10 @@ func (r *Apps) ActiveRestoresOn(serverID string) ([]model.BackupRestore, error) 
 	return restores, err
 }
 
-// UnknownRestoreServers are the servers with a restore whose end nobody
-// knows yet.
-func (r *Apps) UnknownRestoreServers() ([]string, error) {
+// ActiveRestoreServers are the servers with a restore that may still run.
+func (r *Apps) ActiveRestoreServers() ([]string, error) {
 	servers := []string{}
-	err := r.db.Select(&servers, `SELECT DISTINCT a.server_id FROM backup_restores r JOIN apps a ON a.id = r.app_id WHERE r.state = 'unknown' ORDER BY 1`)
+	err := r.db.Select(&servers, `SELECT DISTINCT a.server_id FROM backup_restores r JOIN apps a ON a.id = r.app_id WHERE r.state IN ('running', 'unknown') ORDER BY 1`)
 	return servers, err
 }
 

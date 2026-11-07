@@ -238,7 +238,7 @@ func TestRestoreRunsOnItsOwn(t *testing.T) {
 		says.Lock()
 		answer := answers
 		says.Unlock()
-		if message.Type == protocol.TypeBackupList && answer {
+		if (message.Type == protocol.TypeBackupRestores || message.Type == protocol.TypeBackupList) && answer {
 			says.Lock()
 			reply, _ := protocol.NewMessage(protocol.TypeBackupsResult, knows)
 			says.Unlock()
@@ -267,8 +267,13 @@ func TestRestoreRunsOnItsOwn(t *testing.T) {
 	if still, _ := restarted.RestoreOf(owner.WorkspaceID, "shop", restore.ID); still.State != RestoreRunning {
 		t.Fatalf("the agent says it runs: %+v", still)
 	}
+	// The word that it ended is lost: the minute loop asks a running
+	// one again too, until it ended.
 	finished := time.Now().UTC()
-	agentSays(t, servers, server.ID, protocol.TypeBackupStatus, protocol.Backups{App: "shop", Restores: []protocol.RestoreState{{ID: restore.ID, Database: "/data/app.db", State: protocol.RestoreDone, FinishedAt: &finished}}})
+	says.Lock()
+	knows = protocol.Backups{App: "shop", Restores: []protocol.RestoreState{{ID: restore.ID, Database: "/data/app.db", State: protocol.RestoreDone, FinishedAt: &finished}}}
+	says.Unlock()
+	restarted.askUnknownRestores()
 	if done := waitRestore(t, restarted, restore.ID, RestoreDone); done.FinishedAt == nil {
 		t.Fatalf("done: %+v", done)
 	}
