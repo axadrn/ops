@@ -81,7 +81,11 @@ func (r *runner) agentUpdate(ctx context.Context, message protocol.Message, rule
 		return
 	}
 	r.send(protocol.TypeOK, message.RequestID, nil)
-	r.updater.restart()
+	if err := r.updater.restart(); err != nil {
+		// The new binary is in place, the old one keeps running: deploys
+		// and restores go on, and the next start runs the new one.
+		r.endUpdate()
+	}
 }
 
 // install downloads the binary, checks its SHA-256 and that it runs as the
@@ -167,11 +171,12 @@ func (u *updater) baseURL() string {
 
 // restart has systemd restart the agent with the new binary. It does not
 // wait: systemd stops this process.
-func (u *updater) restart() {
+func (u *updater) restart() error {
 	time.Sleep(restartPause)
 	slog.Info("restarting with the new binary", "unit", u.systemd)
 	err := exec.Command("systemctl", "--no-block", "restart", u.systemd).Run()
 	if err != nil {
 		slog.Error("restart failed; restart the agent by hand", "error", err)
 	}
+	return err
 }

@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,84 +16,155 @@ import (
 	"github.com/axadrn/moin/protocol"
 )
 
-// A restore writes down where it is in the agent's state folder, so an
-// agent that stops in the middle (a crash, a reboot, systemd) ends it
-// safely when it starts again, and the control plane learns how it ended
-// even when it lost track of it:
+// A restore never changes data in place. It builds the restored state
+// beside the live one, then switches with one atomic step, and keeps the
+// state before as the undo:
 //
-//	restores/<app>--<database>.json   a restore that runs, with its step
-//	restore-results.json              how the last restore of each database ended
-//	backup-clear-first.json           SQLite files whose history from before a restore must go
-//	walg-history-pending.json         timeline histories not in the bucket yet
+//	SQLite    the restored file is renamed over the live one
+//	Postgres  the database service is pointed at the restored volume
 //
-// The steps of a restore, in order:
+// So an agent that stops at any point leaves a whole database, the one
+// before or the restored one. A small mark in the state folder says a
+// restore runs and stopped the app; the next start starts the app again
+// and says which of the two it runs on (recoverRestores).
+//
+// The state folder, every file written whole (writeState):
+//
+//	restores/<id>.json         a restore that runs
+//	restore-results.json       how the last restore of each database ended
+//	backup-clear-first.json    SQLite files whose history from before a restore must go
+//	pg-volumes.json            the volume each Postgres runs on, the ones before it, what a switch still owes
 const (
-	// stepPreparing: the restored data is being made; nothing changed.
-	stepPreparing = "preparing"
-	// stepStopped: the app stopped; the data is still the one before.
-	stepStopped = "stopped"
-	// stepSwapping: the Postgres data is being swapped; see pgSwapScript.
-	stepSwapping = "swapping"
-	// stepSwapped: the restored data is in place; the app is to start.
-	stepSwapped = "swapped"
+	resultsFile    = "restore-results.json"
+	clearFirstFile = "backup-clear-first.json"
+	pgVolumesFile  = "pg-volumes.json"
 )
 
-// restoreMark is one restore that runs. Mount, Dir and Image say where a
-// Postgres swap works, Volume where the restored data waits.
+// restoreMark is a restore that runs. Stopped says it stopped the app;
+// Inode (SQLite) is the restored file and Volume (Postgres) the restored
+// volume, which the database is on once the switch happened.
 type restoreMark struct {
 	ID        string    `json:"id"`
 	App       string    `json:"app"`
 	Database  string    `json:"database"`
 	Postgres  bool      `json:"postgres,omitempty"`
-	Step      string    `json:"step"`
+	Service   string    `json:"service,omitempty"`
+	Stopped   bool      `json:"stopped,omitempty"`
 	StartedAt time.Time `json:"started_at"`
 	Copy      string    `json:"copy,omitempty"`
-	Mount     string    `json:"mount,omitempty"`
-	Dir       string    `json:"dir,omitempty"`
-	Image     string    `json:"image,omitempty"`
+	Inode     uint64    `json:"inode,omitempty"`
 	Volume    string    `json:"volume,omitempty"`
 }
 
-// restoreRun is one running restore: it writes its step down and takes
-// the copy of now. keepCopy takes the copy; tests replace it.
+// restoreRun is one running restore and its mark. keepCopy takes the copy
+// of now in the bucket; tests replace it. crash, in tests, ends the restore
+// at a step the way a killed agent would: nothing after it runs.
 type restoreRun struct {
 	b        *backups
 	mark     restoreMark
 	keepCopy func() (string, error)
+	crash    func(step string) bool
 }
 
-// step writes down that the restore reached step.
-func (r *restoreRun) step(step string) {
-	r.mark.Step = step
-	r.b.saveMark(r.mark)
-}
+// errCrash is a restore a test ended as a killed agent would.
+var errCrash = errors.New("the agent stopped here")
 
-// keep takes the one copy of the database as it is, before anything
-// changes, and remembers its ID.
+// at says whether a test ends the restore at step.
+func (r *restoreRun) at(step string) bool { return r.crash != nil && r.crash(step) }
+
+// save writes the mark down whole.
+func (r *restoreRun) save() error { return r.b.saveMark(r.mark) }
+
+// keep takes the copy of now and remembers its ID.
 func (r *restoreRun) keep() error {
 	id, err := r.keepCopy()
 	if id != "" {
 		r.mark.Copy = id
-		r.b.saveMark(r.mark)
+		_ = r.save()
 	}
 	return err
+}
+
+// newID names a restore that came without an ID.
+func newID() string {
+	var b [6]byte
+	_, _ = rand.Read(b[:])
+	return "agent-" + hex.EncodeToString(b[:])
 }
 
 // stateDir is the agent's state folder, next to its apps.
 func (b *backups) stateDir() string { return filepath.Dir(b.apps.dir) }
 
-func markFile(dir, app, database string) string {
-	return filepath.Join(dir, "restores", app+"--"+databaseKey(database)+".json")
+// writeState writes a file of the state folder whole: a temp file, synced,
+// renamed over the old one, the folder synced. A crash leaves the old
+// file or the new one, never half of one.
+func writeState(path string, value any) error {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temp.Name())
+	if _, err := temp.Write(body); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(temp.Name(), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(temp.Name(), path); err != nil {
+		return err
+	}
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = dir.Sync()
+		dir.Close()
+	}
+	return nil
 }
 
-func (b *backups) saveMark(mark restoreMark) {
-	file := markFile(b.stateDir(), mark.App, mark.Database)
-	_ = os.MkdirAll(filepath.Dir(file), 0o700)
-	saveJSON(file, mark)
+// loadState reads a file of the state folder. A missing file is no error
+// and leaves value as it is; a damaged one is, and is reported.
+func (b *backups) loadState(path string, value any) error {
+	body, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err == nil {
+		err = json.Unmarshal(body, value)
+	}
+	if err != nil {
+		err = fmt.Errorf("the agent's state file %s is damaged: %w", path, err)
+		slog.Error("backup: state file", "error", err)
+		b.mu.Lock()
+		b.stateErr = err.Error()
+		b.mu.Unlock()
+	}
+	return err
 }
 
-func (b *backups) dropMark(app, database string) {
-	_ = os.Remove(markFile(b.stateDir(), app, database))
+func markFile(dir, id string) string {
+	return filepath.Join(dir, "restores", id+".json")
+}
+
+func (b *backups) saveMark(mark restoreMark) error {
+	return writeState(markFile(b.stateDir(), mark.ID), mark)
+}
+
+func (b *backups) dropMark(id string) {
+	_ = os.Remove(markFile(b.stateDir(), id))
 }
 
 // marks are the restores that run, or ran when the agent stopped.
@@ -98,9 +172,11 @@ func (b *backups) marks() []restoreMark {
 	entries, _ := os.ReadDir(filepath.Join(b.stateDir(), "restores"))
 	marks := []restoreMark{}
 	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
 		var mark restoreMark
-		body, err := os.ReadFile(filepath.Join(b.stateDir(), "restores", entry.Name()))
-		if err == nil && json.Unmarshal(body, &mark) == nil && mark.App != "" {
+		if b.loadState(filepath.Join(b.stateDir(), "restores", entry.Name()), &mark) == nil && mark.ID != "" {
 			marks = append(marks, mark)
 		}
 	}
@@ -121,16 +197,18 @@ type restoreResult struct {
 func (b *backups) saveResult(result restoreResult) {
 	b.journal.Lock()
 	defer b.journal.Unlock()
-	file := filepath.Join(b.stateDir(), "restore-results.json")
+	file := filepath.Join(b.stateDir(), resultsFile)
 	results := map[string]restoreResult{}
-	body, _ := os.ReadFile(file)
-	_ = json.Unmarshal(body, &results)
+	_ = b.loadState(file, &results)
 	results[result.App+"/"+result.Database] = result
-	saveJSON(file, results)
+	if err := writeState(file, results); err != nil {
+		slog.Error("backup: write how a restore ended", "id", result.ID, "error", err)
+	}
 }
 
 // restoreStates are the restores of an app that run and how the last one
-// of each database ended.
+// of each database ended. It is never nil: an empty list tells the control
+// plane this agent reports restores.
 func (b *backups) restoreStates(app string) []protocol.RestoreState {
 	states := []protocol.RestoreState{}
 	running := map[string]bool{}
@@ -141,10 +219,9 @@ func (b *backups) restoreStates(app string) []protocol.RestoreState {
 		}
 	}
 	b.journal.Lock()
-	body, _ := os.ReadFile(filepath.Join(b.stateDir(), "restore-results.json"))
-	b.journal.Unlock()
 	results := map[string]restoreResult{}
-	_ = json.Unmarshal(body, &results)
+	_ = b.loadState(filepath.Join(b.stateDir(), resultsFile), &results)
+	b.journal.Unlock()
 	for _, result := range results {
 		if result.App != app || running[result.Database] {
 			continue
@@ -160,8 +237,7 @@ func (b *backups) restoreStates(app string) []protocol.RestoreState {
 func (b *backups) loadSet(name string) map[string]bool {
 	set := map[string]bool{}
 	var list []string
-	body, _ := os.ReadFile(filepath.Join(b.stateDir(), name))
-	_ = json.Unmarshal(body, &list)
+	_ = b.loadState(filepath.Join(b.stateDir(), name), &list)
 	for _, item := range list {
 		set[item] = true
 	}
@@ -173,77 +249,72 @@ func (b *backups) saveSet(name string, set map[string]bool) {
 	for item := range set {
 		list = append(list, item)
 	}
-	saveJSON(filepath.Join(b.stateDir(), name), list)
+	if err := writeState(filepath.Join(b.stateDir(), name), list); err != nil {
+		slog.Error("backup: write state", "file", name, "error", err)
+	}
 }
 
 // recoverRestores ends the restores an agent that stopped in the middle
-// left, before anything else runs: what changed nothing starts the app
-// again, a swap that finished starts it on the new data, and a Postgres
-// swap that stopped halfway keeps it stopped, so nothing writes to half
-// the data. Each ends as failed, or done when the data was in place, with
-// a sentence that says what happened.
+// left, before anything else runs. Each stopped the app at most: it starts
+// again, on the database before or the restored one, whichever the switch
+// left in place, and the restore ends as done or failed with a sentence.
 func (b *backups) recoverRestores(ctx context.Context) {
 	for _, mark := range b.marks() {
 		result := restoreResult{ID: mark.ID, App: mark.App, Database: mark.Database, State: protocol.RestoreFailed, FinishedAt: time.Now().UTC()}
-		undo := ""
-		if mark.Copy != "" {
-			undo = " The copy from before is undo-" + mark.Copy + "."
-		}
-		step := mark.Step
-		if step == stepSwapping {
-			step = b.swapState(ctx, mark)
-		}
-		app := b.apps.stopper(ctx, mark.App)
-		switch step {
-		case stepPreparing:
+		switch {
+		case !mark.Stopped:
 			result.Error = "the agent stopped before the restore changed anything; nothing changed"
-		case stepStopped:
-			result.Error = "the agent stopped before the swap; nothing changed"
-			if err := app.startAfter(nil); err != nil {
-				result.Error += "; " + err.Error()
-			} else {
-				result.Error += ", and the app runs again"
-			}
-		case stepSwapped:
-			result.State, result.Error = protocol.RestoreDone, ""
-			if err := app.startAfter(nil); err != nil {
-				result.State, result.Error = protocol.RestoreFailed, "the data is back, but "+err.Error()
-			}
 		default:
-			result.Error = "the swap stopped halfway when the agent stopped: " + mark.App + " stays stopped, so nothing writes to half the data; the restored data is in the volume " + mark.Volume + ", the data before in .moin-old next to it." + undo
-			undo = ""
+			switched := b.switched(mark)
+			if switched && !mark.Postgres {
+				b.mu.Lock()
+				b.clearFirst[filepath.Clean(b.hostPathOf(mark))] = true
+				b.saveSet(clearFirstFile, b.clearFirst)
+				b.mu.Unlock()
+			}
+			app := b.apps.stopper(ctx, mark.App)
+			app.recreate = mark.Postgres
+			startErr := app.startAfter(nil)
+			switch {
+			case switched && startErr == nil:
+				result.State = protocol.RestoreDone
+			case switched:
+				result.Error = "the restored data is in place, but " + startErr.Error()
+			case startErr == nil:
+				result.Error = "the agent stopped before the switch; nothing changed, and the app runs again"
+			default:
+				result.Error = "the agent stopped before the switch; nothing changed, but " + startErr.Error()
+			}
+			if mark.Copy != "" && result.State != protocol.RestoreDone {
+				result.Error += ". The copy from before is undo-" + mark.Copy + "."
+			}
 		}
-		if undo != "" {
-			result.Error = strings.TrimSuffix(result.Error, ".") + "." + undo
-		}
-		if result.State == protocol.RestoreDone {
-			result.Error = ""
-		}
-		slog.Warn("backup: a restore the agent stopped in the middle", "app", mark.App, "database", mark.Database, "step", mark.Step, "state", result.State, "error", result.Error)
+		slog.Warn("backup: a restore the agent stopped in the middle", "app", mark.App, "database", mark.Database, "state", result.State, "error", result.Error)
 		b.saveResult(result)
-		b.dropMark(mark.App, mark.Database)
+		b.dropMark(mark.ID)
 	}
+	b.removeThrowaways(ctx)
 }
 
-// swapState looks at a Postgres swap the agent stopped in: swapped when
-// the restored data is in place, stopped when the swap never got far,
-// halfway else.
-func (b *backups) swapState(ctx context.Context, mark restoreMark) string {
-	script := `d="$0"
-if [ -e "$d/.moin-old" ]; then echo halfway; exit 0; fi
-if [ "$(cat "$d/.moin-restored" 2>/dev/null)" = "$1" ]; then echo swapped; exit 0; fi
-rm -rf "$d/.moin-new"; echo stopped`
-	out, err := b.apps.output(ctx, "docker", "run", "--rm", "-u", "root", "-v", mark.Mount, "--entrypoint", "sh", mark.Image, "-c", script, mark.Dir, mark.ID)
-	if err != nil {
-		return "halfway"
+// switched says the restore's switch happened: the live SQLite file is
+// the restored one, or the Postgres runs on the restored volume.
+func (b *backups) switched(mark restoreMark) bool {
+	if mark.Postgres {
+		volumes := b.pgVolumes()
+		state, ok := volumes[mark.App+"/"+mark.Service]
+		return ok && mark.Volume != "" && state.Current.Source == mark.Volume
 	}
-	switch strings.TrimSpace(out) {
-	case "swapped":
-		return stepSwapped
-	case "stopped":
-		return stepStopped
+	return mark.Inode != 0 && inode(b.hostPathOf(mark)) == mark.Inode
+}
+
+// hostPathOf is the SQLite file of a mark's database.
+func (b *backups) hostPathOf(mark restoreMark) string {
+	for _, database := range b.apps.runningDatabases(mark.App) {
+		if database.Path == mark.Database {
+			return database.HostPath
+		}
 	}
-	return "halfway"
+	return ""
 }
 
 // errUpdating refuses work while the agent replaces itself.

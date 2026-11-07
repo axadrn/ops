@@ -562,3 +562,30 @@ func TestSpaceFor(t *testing.T) {
 		t.Fatal("a disk has room for an exabyte")
 	}
 }
+
+// TestStateFiles: every state file is written whole, and a damaged one is
+// reported, not skipped.
+func TestStateFiles(t *testing.T) {
+	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
+	b := newBackups(a, func(protocol.MessageType, string, any) {})
+	file := filepath.Join(b.stateDir(), pgVolumesFile)
+	if err := b.savePgVolume("shop/db", pgVolume{Current: pgMount{Type: "volume", Source: "v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.pgVolumes()["shop/db"].Current.Source; got != "v1" {
+		t.Fatalf("read back %q", got)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(b.stateDir(), "."+pgVolumesFile+".*")); len(leftovers) != 0 {
+		t.Fatalf("temp files left: %v", leftovers)
+	}
+	os.WriteFile(file, []byte(`{"shop/db": {"curr`), 0o600)
+	if err := b.savePgVolume("shop/db", pgVolume{}); err == nil {
+		t.Fatal("a switch was written over a damaged file")
+	}
+	if !strings.Contains(b.stateErr, "damaged") {
+		t.Fatalf("not reported: %q", b.stateErr)
+	}
+	if err := b.applyVolumes("shop", filepath.Join(t.TempDir(), "compose.json")); err == nil {
+		t.Fatal("compose ran on a damaged volume file")
+	}
+}

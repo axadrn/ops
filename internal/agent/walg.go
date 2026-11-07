@@ -84,9 +84,6 @@ type walgState struct {
 	broke, rebased time.Time
 	// why says how it broke.
 	why string
-	// fresh says a restore swapped the data and recording must start
-	// over on it.
-	fresh bool
 }
 
 // walg runs the companions and remembers their state.
@@ -189,10 +186,21 @@ func caBundle() string {
 }
 
 // pgData is where a Postgres container keeps its data: PGDATA and the mount
-// that holds it.
+// that holds it, a volume or a folder of the server at dest.
 type pgData struct {
-	dir   string
-	mount string // a docker -v source:destination
+	dir         string
+	mount       string // a docker -v source:destination
+	typ, source string
+	dest        string
+}
+
+// sub is where PGDATA is inside its mount, "" at its top.
+func (d pgData) sub() string {
+	rel, err := filepath.Rel(d.dest, d.dir)
+	if err != nil || rel == "." {
+		return ""
+	}
+	return rel
 }
 
 // pgDataOf reads PGDATA and its mount from a running Postgres container.
@@ -222,7 +230,7 @@ func (a *apps) pgDataOf(ctx context.Context, container string) (pgData, error) {
 		if mount.Type == "volume" {
 			source = mount.Name
 		}
-		return pgData{dir: dir, mount: source + ":" + mount.Destination}, nil
+		return pgData{dir: dir, mount: source + ":" + mount.Destination, typ: mount.Type, source: source, dest: mount.Destination}, nil
 	}
 	return pgData{}, fmt.Errorf("PGDATA %s is on no volume: its data would be lost with the container", dir)
 }

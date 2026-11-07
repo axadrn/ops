@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -162,21 +161,20 @@ func Run(ctx context.Context, dir string, state State) error {
 	agent.apps.proxyMode = agent.security.proxyMode
 	agent.updater = newUpdater(state.URL)
 	// A restore the agent stopped in the middle of ends first: the app
-	// runs again, or stays stopped on half new data, and says so.
+	// runs again, on the data before or the restored data, both whole.
 	agent.backups.recoverRestores(ctx)
-	if agent.updater.systemd != "" {
-		refreshUnit(unitFile)
-	}
-	// systemd stops the agent with a signal: a deploy or a restore that
-	// runs ends first, within a bound (TimeoutStopSec of the unit).
-	defer agent.waitIdle(stopWait)
+	// On a stop, a deploy or a restore that runs gets a moment to end
+	// before backups stop; one that does not is ended by the next start.
+	defer func() {
+		agent.waitIdle(stopWait)
+		agent.backups.configure(context.Background(), nil, nil)
+	}()
 	go agent.backups.recordLoop(ctx)
 	go agent.backups.checks(ctx)
 	go agent.backups.health(ctx)
 	go agent.apps.cleanups(ctx)
 	go agent.backups.sweepLoop(ctx)
 	go agent.metrics(ctx)
-	defer agent.backups.configure(context.Background(), nil, nil)
 	wait := minReconnect
 	for {
 		connected, err := agent.session(ctx)
@@ -463,8 +461,9 @@ func websocketURL(raw string) (string, error) {
 }
 
 // stopWait is how long a stopping agent waits for the deploys and restores
-// that run; the unit gives it a little longer (protocol.AgentUnit).
-const stopWait = 25 * time.Minute
+// that run, within systemd's default stop timeout of 90 seconds. A
+// restore changes no data in place, so one cut off is harmless.
+const stopWait = time.Minute
 
 // beginWork starts a deploy or a restore, unless the agent is updating
 // itself. endWork ends it.
@@ -513,20 +512,4 @@ func (r *runner) waitIdle(limit time.Duration) {
 		}
 		slog.Info("waiting for a deploy or a restore to end before stopping", "running", work)
 	}
-}
-
-// refreshUnit writes the agent's systemd unit again when an older agent
-// wrote another, such as one that stops the agent before a restore ends.
-// It takes effect at the next start.
-func refreshUnit(file string) {
-	body, err := os.ReadFile(file)
-	want := protocol.AgentUnit(build.Name)
-	if err != nil || string(body) == want {
-		return
-	}
-	if err := os.WriteFile(file, []byte(want), 0o644); err != nil {
-		slog.Warn("refresh the systemd unit", "error", err)
-		return
-	}
-	_ = exec.Command("systemctl", "daemon-reload").Run()
 }

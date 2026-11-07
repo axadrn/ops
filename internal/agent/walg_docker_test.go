@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -66,6 +67,10 @@ func TestPostgresGoBack(t *testing.T) {
 		exec.Command("docker", "rm", "-f", companionName(app, "db"), "moin-walgtest-s3").Run()
 		exec.Command("docker", "compose", "-p", project(app), "-f", composeFile, "down", "-v").Run()
 		exec.Command("docker", "volume", "rm", "-f", "moin-walgtest-pgdata").Run()
+		out, _ := exec.Command("docker", "volume", "ls", "-q", "--filter", "name=moin-restore-walgtest-").Output()
+		for _, volume := range strings.Fields(string(out)) {
+			exec.Command("docker", "volume", "rm", "-f", volume).Run()
+		}
 	}
 	down()
 	defer down()
@@ -97,6 +102,14 @@ func TestPostgresGoBack(t *testing.T) {
 	}
 	b.defaultBucket = bucket
 	e := b.engine(app, database)
+	pgCopies := func() []protocol.Copy {
+		t.Helper()
+		win, err := e.Window(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return win.copies
+	}
 
 	var target pgTarget
 	ready := func() {
@@ -176,11 +189,23 @@ func TestPostgresGoBack(t *testing.T) {
 		t.Fatalf("status %+v", status)
 	}
 
-	// Back to the noted minute: exactly its rows.
+	// Back to the noted minute: exactly its rows, on a new volume beside
+	// the one before, which stays as the undo.
 	goBack(protocol.BackupRestore{At: &noted}, "1:T1,2:T1")
-	copies, err := b.copies(ctx, app, database)
-	if err != nil || len(copies) != 1 {
-		t.Fatalf("copies after the restore %+v %v", copies, err)
+	copies := pgCopies()
+	if len(copies) != 1 {
+		t.Fatalf("states before restores after the restore %+v", copies)
+	}
+	if volume := b.pgVolumes()[app+"/db"]; !strings.HasPrefix(volume.Current.Source, "moin-restore-walgtest-db-") || len(volume.Previous) != 1 || volume.Previous[0].Source != "moin-walgtest-pgdata" {
+		t.Fatalf("volumes after the restore: %+v", volume)
+	}
+	// A deploy, which recreates the database, keeps the restored volume.
+	if err := a.compose(ctx, app, composeFile, func(string, ...any) {}, "up", "-d", "--force-recreate", "db"); err != nil {
+		t.Fatal(err)
+	}
+	ready()
+	if got := orders(); got != "1:T1,2:T1" {
+		t.Fatalf("after a deploy: %s", got)
 	}
 	// The history goes on after the restore, on the new timeline.
 	for deadline := time.Now().Add(2 * time.Minute); sql(`SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'moin_walg' AND active;`) != "1"; {
@@ -188,17 +213,26 @@ func TestPostgresGoBack(t *testing.T) {
 			logs, _ := exec.Command("docker", "logs", "--tail", "10", companionName(app, "db")).CombinedOutput()
 			t.Fatalf("WAL-G does not stream after the restore: %s", logs)
 		}
+		b.recordAll(ctx)
 		time.Sleep(time.Second)
 	}
-	// Undo: the copy before the restore puts the state before it back.
+	// Undo: the switch back to the volume before the restore, as it was.
 	goBack(protocol.BackupRestore{Copy: copies[0].ID}, "1:T2,2:T1,3:T2,4:T2")
+	if volume := b.pgVolumes()[app+"/db"]; volume.Current.Source != "moin-walgtest-pgdata" || len(volume.Previous) != 1 {
+		t.Fatalf("volumes after the undo: %+v", volume)
+	}
+	// The undo can be undone too.
+	if copies := pgCopies(); len(copies) != 1 {
+		t.Fatalf("states before restores after the undo %+v", copies)
+	}
 
 	sql(`INSERT INTO orders VALUES (5, 'T3'), (6, 'T3');`)
 	flush()
 	afterT3 := pause()
 	sql(`DELETE FROM orders;`)
 	flush()
-	// A moment after the first restore, on its timeline.
+	// A moment after the undo: the timeline before the first restore goes
+	// on, timelines.json says so.
 	goBack(protocol.BackupRestore{At: &afterT3}, "1:T2,2:T1,3:T2,4:T2,5:T3,6:T3")
 	// A moment before the first restore but after the moment it went back
 	// to: the timeline live then, not the newest.
@@ -206,10 +240,9 @@ func TestPostgresGoBack(t *testing.T) {
 	// And back to the first noted minute once more.
 	goBack(protocol.BackupRestore{At: &noted}, "1:T1,2:T1")
 
-	// A restore that fails after the recovery: the copy of now comes once
-	// the app stopped writing, and when it fails the app runs again,
-	// nothing changed, and nothing in the bucket points to the timeline
-	// the recovery made. A restore to a later moment lands on it exactly.
+	// The agent is killed in the middle of a restore. Its next start runs
+	// the app on a whole database, the one before or the restored one, and
+	// says how the restore ended under its ID.
 	webRuns := func() bool {
 		out, _ := a.output(ctx, "docker", "compose", "-p", project(app), "-f", composeFile, "ps", "-q", "--status", "running", "web")
 		return strings.TrimSpace(out) != ""
@@ -223,69 +256,88 @@ func TestPostgresGoBack(t *testing.T) {
 		})
 		return n
 	}
-	before := histories()
-	stoppedForCopy := false
-	b.keepHook = func() (string, error) {
-		stoppedForCopy = !webRuns()
-		return "", errors.New("injected")
+	crash := func(id, step string, at time.Time) protocol.RestoreState {
+		t.Helper()
+		b.crashHook = func(now string) bool { return now == step }
+		err := b.restore(ctx, protocol.BackupRestore{ID: id, App: app, Database: database.Path, At: &at})
+		b.crashHook = nil
+		if !errors.Is(err, errCrash) || webRuns() {
+			t.Fatalf("crash at %s: %v, web runs %v", step, err, webRuns())
+		}
+		restarted := newBackups(a, func(protocol.MessageType, string, any) {})
+		restarted.recoverRestores(ctx)
+		if !webRuns() {
+			t.Fatalf("after the crash at %s web does not run", step)
+		}
+		ready()
+		for _, state := range restarted.restoreStates(app) {
+			if state.ID == id {
+				return state
+			}
+		}
+		t.Fatalf("no state for %s", id)
+		return protocol.RestoreState{}
 	}
-	err = b.restore(ctx, protocol.BackupRestore{ID: "failed-copy", App: app, Database: database.Path, At: &beforeFirst})
-	b.keepHook = nil
-	if err == nil || !strings.Contains(err.Error(), "nothing changed") || !stoppedForCopy || !webRuns() {
-		t.Fatalf("a restore that fails after the recovery: %v, web stopped for the copy %v, runs %v", err, stoppedForCopy, webRuns())
+	before := histories()
+	// Killed after it stopped the writers, before the switch: nothing
+	// changed, nothing in the bucket points to the timeline the recovery
+	// made, and its volume is gone.
+	if state := crash("crash-stopped", "stopped", beforeFirst); state.State != protocol.RestoreFailed || !strings.Contains(state.Error, "nothing changed") {
+		t.Fatalf("crash before the switch: %+v", state)
 	}
 	if got := orders(); got != "1:T1,2:T1" {
-		t.Fatalf("after a failed restore: %s", got)
+		t.Fatalf("after a crash before the switch: %s", got)
 	}
 	if after := histories(); after != before {
-		t.Fatalf("a failed restore left a timeline history in the bucket: %d before, %d after", before, after)
+		t.Fatalf("a crash before the switch left a timeline history in the bucket: %d before, %d after", before, after)
 	}
 	sql(`INSERT INTO orders VALUES (7, 'T4');`)
 	flush()
 	afterT4 := pause()
 	sql(`INSERT INTO orders VALUES (8, 'T5');`)
 	flush()
-	goBack(protocol.BackupRestore{At: &afterT4}, "1:T1,2:T1,7:T4")
-	// The new timeline's history was in the bucket before Postgres wrote a
-	// thing on it.
-	if after := histories(); after != before+1 {
-		t.Fatalf("histories after the restore: %d, want %d", after, before+1)
+	// Killed right after the switch: the app starts on the restored data,
+	// the restore is done, and what the switch owes the bucket, the new
+	// timeline, waits for Record. Until then a restore waits too.
+	if state := crash("crash-switched", "switched", afterT4); state.State != protocol.RestoreDone {
+		t.Fatalf("crash after the switch: %+v", state)
 	}
-
-	// A history the restore could not put in the bucket: the backup says
-	// so, a restore waits, and Record puts it there with the companion.
-	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(time.Second) {
-		out, _ := a.output(ctx, "docker", "inspect", "-f", "{{.State.Running}}", companionName(app, "db"))
-		if strings.TrimSpace(out) == "true" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("no companion after the restore")
-		}
+	if got := orders(); got != "1:T1,2:T1,7:T4" {
+		t.Fatalf("after a crash after the switch: %s", got)
 	}
-	timeline := sql(`SELECT timeline_id FROM pg_control_checkpoint();`)
-	name := fmt.Sprintf("%08X.history", mustAtoi(t, timeline))
-	b.pendHistories(app, database, "", func(string, []string, string, ...string) (string, error) { return name, nil })
+	if owed := b.pgVolumes()[app+"/db"].Owed; owed == nil || owed.Timeline == 0 || len(owed.Histories) == 0 || !owed.Fresh {
+		t.Fatalf("owed after the crash: %+v", owed)
+	}
 	err = b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &afterT4})
 	if err == nil || !strings.Contains(err.Error(), "not in the bucket yet") {
-		t.Fatalf("a restore while a history is pending: %v", err)
+		t.Fatalf("a restore while the timeline is owed: %v", err)
 	}
 	if err := e.Record(ctx); err != nil {
-		t.Fatalf("Record with a pending history: %v", err)
+		t.Fatalf("Record after the crash: %v", err)
 	}
-	if pending := b.historiesPending(app, database); len(pending) != 0 {
-		t.Fatalf("still pending: %v", pending)
+	if owed := b.pgVolumes()[app+"/db"].Owed; owed != nil {
+		t.Fatalf("still owed after Record: %+v", owed)
+	}
+	if after := histories(); after != before+1 {
+		t.Fatalf("histories after the switch: %d, want %d", after, before+1)
 	}
 	if !webRuns() {
 		t.Fatal("web does not run after the restore")
 	}
+	// And the history goes on from there: back to a moment after it.
+	sql(`INSERT INTO orders VALUES (9, 'T6');`)
+	flush()
+	afterT6 := pause()
+	sql(`DELETE FROM orders WHERE id = 1;`)
+	flush()
+	goBack(protocol.BackupRestore{At: &afterT6}, "1:T1,2:T1,7:T4,9:T6")
 
 	// A moment to come is refused, and nothing changes.
 	future := time.Now().Add(time.Hour)
 	if err := b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &future}); err == nil {
 		t.Error("a restore to a moment to come worked")
 	}
-	if got := orders(); got != "1:T1,2:T1,7:T4" {
+	if got := orders(); got != "1:T1,2:T1,7:T4,9:T6" {
 		t.Fatalf("after a refused restore: %s", got)
 	}
 
@@ -414,7 +466,8 @@ func TestPostgresGoBack(t *testing.T) {
 	}
 
 	// Without a bucket the companion goes and its slot with it, and no
-	// restore or check volume is left.
+	// check volume is left; of the restore volumes only the one the
+	// database runs on and the undos stay.
 	b.defaultBucket = nil
 	b.recordAll(ctx)
 	if out, _ := exec.Command("docker", "ps", "-aq", "--filter", "label=moin.walg").Output(); strings.TrimSpace(string(out)) != "" {
@@ -426,11 +479,24 @@ func TestPostgresGoBack(t *testing.T) {
 	if out, _ := exec.Command("docker", "ps", "-aq", "--filter", "label=moin.throwaway").Output(); strings.TrimSpace(string(out)) != "" {
 		t.Errorf("throwaway containers left: %s", out)
 	}
-	for _, prefix := range []string{"moin-restore-", "moin-check-"} {
-		out, _ := exec.Command("docker", "volume", "ls", "-q", "--filter", "name="+prefix).Output()
-		if strings.TrimSpace(string(out)) != "" {
-			t.Errorf("volumes left: %s", out)
+	b.removeThrowaways(ctx)
+	if out, _ := exec.Command("docker", "volume", "ls", "-q", "--filter", "name=moin-check-").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Errorf("check volumes left: %s", out)
+	}
+	volume := b.pgVolumes()[app+"/db"]
+	left, _ := exec.Command("docker", "volume", "ls", "-q", "--filter", "name=moin-restore-").Output()
+	for _, name := range strings.Fields(string(left)) {
+		if name != volume.Current.Source && !slices.ContainsFunc(volume.Previous, func(previous pgPrevious) bool { return previous.Source == name }) {
+			t.Errorf("a restore volume nobody needs is left: %s", name)
 		}
+	}
+	// 7 days after a restore its undo goes, but never the volume in use.
+	b.sweepVolumes(ctx, time.Now().Add(keepHistory+time.Hour))
+	if volume := b.pgVolumes()[app+"/db"]; len(volume.Previous) != 0 {
+		t.Errorf("undos left after 7 days: %+v", volume.Previous)
+	}
+	if out, err := exec.Command("docker", "volume", "inspect", b.pgVolumes()[app+"/db"].Current.Source).CombinedOutput(); err != nil {
+		t.Errorf("the volume in use went: %v %s", err, out)
 	}
 }
 

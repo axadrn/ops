@@ -42,10 +42,6 @@ func AgentUnit(name string) string {
 		"Environment=" + strings.ToUpper(name) + "_STATE_DIR=/var/lib/" + name + "\n" +
 		"Restart=always\n" +
 		"RestartSec=2\n" +
-		// A stop signals the agent only: it lets a running restore end
-		// (up to 25 minutes) before the rest of its processes go.
-		"KillMode=mixed\n" +
-		"TimeoutStopSec=1800\n" +
 		"\n[Install]\n" +
 		"WantedBy=multi-user.target\n"
 }

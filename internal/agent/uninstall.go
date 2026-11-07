@@ -60,6 +60,12 @@ func Uninstall(ctx context.Context, dir string, withApps bool, logf func(string,
 			if err != nil {
 				return nil, fmt.Errorf("remove %s: %w", app, err)
 			}
+			// A Postgres a restore switched runs on a volume of moin's,
+			// outside the app's own.
+			volumes, _ := a.output(ctx, "docker", "volume", "ls", "-q", "--filter", "name="+ourName+"-restore-"+app+"-")
+			for _, volume := range strings.Fields(volumes) {
+				_, _ = a.output(ctx, "docker", "volume", "rm", "-f", volume)
+			}
 		}
 		logf("removing the proxy, the tunnel and the firewall")
 		_, _ = a.output(ctx, "docker", "rm", "-f", proxyName)
@@ -72,8 +78,9 @@ func Uninstall(ctx context.Context, dir string, withApps bool, logf func(string,
 	} else {
 		entries, _ := os.ReadDir(dir)
 		for _, entry := range entries {
-			// The apps keep their data and the proxy its certificates.
-			if entry.Name() == "apps" || entry.Name() == "traefik" {
+			// The apps keep their data and the proxy its certificates; a
+			// Postgres a restore switched keeps the volume it runs on.
+			if entry.Name() == "apps" || entry.Name() == "traefik" || entry.Name() == pgVolumesFile {
 				continue
 			}
 			err = os.RemoveAll(filepath.Join(dir, entry.Name()))

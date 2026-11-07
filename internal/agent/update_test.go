@@ -108,20 +108,3 @@ func TestUpdateWaitsForARestore(t *testing.T) {
 		t.Fatalf("stopped after %s while a restore ran", waited)
 	}
 }
-
-// TestRefreshUnit: an older unit, which stops the agent before a restore
-// ends, is written again; the current one stays as it is.
-func TestRefreshUnit(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "moin-agent.service")
-	os.WriteFile(file, []byte("[Service]\nExecStart=/usr/local/bin/moin agent\n"), 0o644)
-	refreshUnit(file)
-	body, _ := os.ReadFile(file)
-	if !strings.Contains(string(body), "KillMode=mixed") || !strings.Contains(string(body), "TimeoutStopSec=1800") {
-		t.Fatalf("unit %s", body)
-	}
-	missing := filepath.Join(t.TempDir(), "none.service")
-	refreshUnit(missing)
-	if _, err := os.Stat(missing); err == nil {
-		t.Fatal("a unit was written where none was")
-	}
-}

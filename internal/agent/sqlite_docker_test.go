@@ -67,8 +67,8 @@ func TestSQLiteGoBack(t *testing.T) {
 	}
 
 	// Through the real restore: the app stops before the copy of now, so
-	// no write comes after it; the restore writes its step down; Record
-	// leaves the file alone meanwhile. A copy that fails starts the app
+	// no write comes after it; the restore writes down that it stopped the
+	// app; Record leaves the file alone meanwhile. A copy that fails starts the app
 	// again, changes nothing, and the result says so under its ID.
 	runningNow := func() bool {
 		out, _ := a.output(ctx, "docker", "compose", "-p", project(app), "-f", composeFile, "ps", "-q", "--status", "running")
@@ -79,7 +79,7 @@ func TestSQLiteGoBack(t *testing.T) {
 		list, _ := s3Client(bucket).ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(prefix + "/litestream/")})
 		return len(list.Contents)
 	}
-	stoppedForCopy, followed, step := false, true, ""
+	stoppedForCopy, followed, marked := false, true, false
 	b.keepHook = func() (string, error) {
 		stoppedForCopy = !runningNow()
 		b.recordAll(ctx)
@@ -88,7 +88,7 @@ func TestSQLiteGoBack(t *testing.T) {
 		b.mu.Unlock()
 		for _, mark := range b.marks() {
 			if mark.ID == "failed-copy" {
-				step = mark.Step
+				marked = mark.Stopped
 			}
 		}
 		return "", errors.New("injected")
@@ -97,8 +97,8 @@ func TestSQLiteGoBack(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "nothing changed") || !stoppedForCopy || !runningNow() {
 		t.Fatalf("a failed copy: %v, stopped for the copy %v, runs %v", err, stoppedForCopy, runningNow())
 	}
-	if followed || step != stepStopped {
-		t.Fatalf("during the restore: Record followed the file %v, step %q", followed, step)
+	if followed || !marked {
+		t.Fatalf("during the restore: Record followed the file %v, marked stopped %v", followed, marked)
 	}
 	if got := rows(); got != "b,c,d" {
 		t.Fatalf("after a failed copy: %s", got)
@@ -107,7 +107,7 @@ func TestSQLiteGoBack(t *testing.T) {
 		t.Fatalf("restore states %+v, marks %+v", states, b.marks())
 	}
 
-	// A swap that fails changes nothing, also not the history in the
+	// A switch that fails changes nothing, also not the history in the
 	// bucket: nothing is cleared, now or later.
 	before := litestreamObjects()
 	b.keepHook = func() (string, error) {
@@ -115,8 +115,8 @@ func TestSQLiteGoBack(t *testing.T) {
 	}
 	err = b.restore(ctx, protocol.BackupRestore{ID: "failed-swap", App: app, Database: database.Path, At: &noted})
 	b.keepHook = nil
-	if err == nil || !strings.Contains(err.Error(), "swap the database") || !strings.Contains(err.Error(), "nothing changed") || !runningNow() {
-		t.Fatalf("a failed swap: %v, runs %v", err, runningNow())
+	if err == nil || !strings.Contains(err.Error(), "prepare the switch") || !strings.Contains(err.Error(), "nothing changed") || !runningNow() {
+		t.Fatalf("a failed switch: %v, runs %v", err, runningNow())
 	}
 	if got := rows(); got != "b,c,d" {
 		t.Fatalf("after a failed swap: %s", got)
@@ -182,6 +182,70 @@ func TestSQLiteGoBack(t *testing.T) {
 	}
 	if _, err := os.Stat(file + "." + ourName + "-restore"); err == nil {
 		t.Error("the restored file was left behind")
+	}
+
+	// The agent is killed in the middle of a restore. Its next start runs
+	// the app on a whole file, the one before or the restored one, and
+	// says how the restore ended under its ID.
+	db.Exec(`INSERT INTO notes (body) VALUES ('g')`)
+	waitRecorded(t, b.engine(app, database), time.Now().Add(-time.Second))
+	time.Sleep(1100 * time.Millisecond)
+	mid := time.Now().UTC()
+	time.Sleep(1100 * time.Millisecond)
+	db.Exec(`DELETE FROM notes WHERE body = 'b'`)
+	waitRecorded(t, b.engine(app, database), mid)
+	crash := func(id, step string) protocol.RestoreState {
+		t.Helper()
+		b.crashHook = func(now string) bool { return now == step }
+		err := b.restore(ctx, protocol.BackupRestore{ID: id, App: app, Database: database.Path, At: &mid})
+		b.crashHook = nil
+		if !errors.Is(err, errCrash) || runningNow() {
+			t.Fatalf("crash at %s: %v, runs %v", step, err, runningNow())
+		}
+		restarted := newBackups(a, func(protocol.MessageType, string, any) {})
+		restarted.recoverRestores(ctx)
+		// b goes on as the restarted agent: it knows what that one knows.
+		b.mu.Lock()
+		b.clearFirst = restarted.loadSet(clearFirstFile)
+		b.mu.Unlock()
+		if !runningNow() {
+			t.Fatalf("after the crash at %s the app does not run", step)
+		}
+		if err := integrityCheck(ctx, file); err != nil {
+			t.Fatalf("after the crash at %s: %v", step, err)
+		}
+		db.Close()
+		db = reopen(t, file)
+		for _, state := range restarted.restoreStates(app) {
+			if state.ID == id {
+				return state
+			}
+		}
+		t.Fatalf("no state for %s", id)
+		return protocol.RestoreState{}
+	}
+	if state := crash("crash-stopped", "stopped"); state.State != protocol.RestoreFailed || !strings.Contains(state.Error, "nothing changed") {
+		t.Fatalf("crash before the switch: %+v", state)
+	}
+	if got := rows(); got != "c,d,e,g" {
+		t.Fatalf("after a crash before the switch: %s, want c,d,e,g", got)
+	}
+	if state := crash("crash-switched", "switched"); state.State != protocol.RestoreDone {
+		t.Fatalf("crash after the switch: %+v", state)
+	}
+	if got := rows(); got != "b,c,d,e,g" {
+		t.Fatalf("after a crash after the switch: %s, want b,c,d,e,g", got)
+	}
+	// The history from before the switch goes, and the history follows the
+	// restored file.
+	b.recordAll(ctx)
+	if b.loadSet(clearFirstFile)[file] {
+		t.Fatal("the history from before the crashed restore was not cleared")
+	}
+	db.Exec(`INSERT INTO notes (body) VALUES ('e2')`)
+	waitRecorded(t, b.engine(app, database), time.Now().Add(-time.Second))
+	if err := b.engine(app, database).Check(ctx); err != nil {
+		t.Fatalf("the check after the crashed restore: %v", err)
 	}
 
 	// The bucket is out of reach right after the swap, and the agent

@@ -35,7 +35,7 @@ import (
 //	          Record                       Check (daily)
 //	database ────────▶ bucket: every change ────────▶ throwaway copy, verified
 //	   ▲                 for 7 days
-//	   └──────────────── GoBack to a moment (one full copy of now first)
+//	   └──────────────── GoBack to a moment: built beside, one switch
 //
 //	database ── Download ──▶ bucket downloads/ ──▶ a short-lived link
 //
@@ -44,7 +44,8 @@ import (
 // control plane:
 //
 //	<path>/<workspace>/<app>/<app ID>/<database>/litestream/ or walg/   the history
-//	<path>/<workspace>/<app>/<app ID>/<database>/before-restore/        the copy before each restore
+//	<path>/<workspace>/<app>/<app ID>/<database>/before-restore/        SQLite: the copy before each restore
+//	<path>/<workspace>/<app>/<app ID>/<database>/timelines.json         Postgres: the timeline it ran on, since when
 //	<path>/<workspace>/<app>/<app ID>/downloads/                        copies to download
 //
 // The workspace ID keeps workspaces that share a bucket apart, the app ID
@@ -53,9 +54,9 @@ type engine interface {
 	// Record keeps writing down every change of the database into the
 	// bucket. It runs every minute and says what keeps it from working.
 	Record(ctx context.Context) error
-	// GoBack puts the database back to a moment, or to a full copy. It
-	// calls keep, which takes the one copy of the database as it is,
-	// right before it replaces anything.
+	// GoBack puts the database back to a moment, or undoes an earlier
+	// restore. It builds the restored state beside the live one and
+	// switches in one step; the state before stays as the undo.
 	GoBack(ctx context.Context, to moment, run *restoreRun) error
 	// Check restores the newest state of the history into a throwaway
 	// copy and verifies it; errNothingYet while the history is empty.
@@ -67,18 +68,20 @@ type engine interface {
 	Window(ctx context.Context) (window, error)
 }
 
-// moment is where GoBack goes: a time, or a full copy in File, the one
-// moin took before an earlier restore.
+// moment is where GoBack goes: a time, or Copy, the state an earlier
+// restore left behind, which undoes it.
 type moment struct {
 	At   time.Time
-	File string
+	Copy string
 }
 
 // window is the history of a database: since its oldest moment, with
-// newest the newest change in the bucket. note says what it lacks.
+// newest the newest change in the bucket. note says what it lacks, copies
+// are the states before the restores of the last 7 days.
 type window struct {
 	since, newest time.Time
 	note          string
+	copies        []protocol.Copy
 }
 
 // errNothingYet is a history with nothing in it yet: a check has nothing
@@ -137,8 +140,12 @@ type backups struct {
 	// journal keeps the files of the restore journal whole; see
 	// backup_journal.go.
 	journal sync.Mutex
-	// keepHook replaces the copy before a restore in tests.
-	keepHook func() (string, error)
+	// keepHook replaces the copy before a restore in tests, crashHook ends
+	// a restore at a step as a killed agent would.
+	keepHook  func() (string, error)
+	crashHook func(step string) bool
+	// stateErr says a state file is damaged; see loadState.
+	stateErr string
 }
 
 // check is the newest daily check of a database.
@@ -154,10 +161,6 @@ func newBackups(a *apps, send func(protocol.MessageType, string, any)) *backups 
 	b.clearFirst = b.loadSet(clearFirstFile)
 	return b
 }
-
-// clearFirstFile holds the SQLite files whose history from before a
-// restore must go before Record follows them again.
-const clearFirstFile = "backup-clear-first.json"
 
 // engine is the engine of a database.
 func (b *backups) engine(app string, database protocol.Database) engine {
@@ -506,12 +509,13 @@ func (b *backups) status(ctx context.Context, app string, database protocol.Data
 	}
 	backup.Note = window.note
 	if withCopies {
-		copies, err := b.copies(ctx, app, database)
-		if err != nil && backup.Error == "" {
-			backup.Error = "list the copies before restores: " + err.Error()
-		}
-		backup.Copies = copies
+		backup.Copies = window.copies
 	}
+	b.mu.Lock()
+	if b.stateErr != "" && backup.Error == "" {
+		backup.Error = b.stateErr
+	}
+	b.mu.Unlock()
 	b.mu.Lock()
 	last := b.checked[key(app, database)]
 	b.mu.Unlock()
@@ -546,15 +550,62 @@ func (r *runner) backupRestore(ctx context.Context, message protocol.Message) {
 	r.send(protocol.TypeOK, message.RequestID, nil)
 }
 
-// restore puts one database back to a moment, or to the copy before an
-// earlier restore. The engine takes one full copy of the database as it
-// is first, which keeps 7 days, so the restore can be undone.
+// restore puts one database back to a moment, or to the state before an
+// earlier restore, which undoes that one. It is written down as running
+// the moment it arrives, so the control plane hears of it even when the
+// session ends right then, and it ends with a result either way.
 func (b *backups) restore(ctx context.Context, request protocol.BackupRestore) error {
+	if request.ID == "" {
+		request.ID = newID()
+	}
+	run := &restoreRun{b: b, mark: restoreMark{ID: request.ID, App: request.App, Database: request.Database, StartedAt: time.Now().UTC()}, crash: b.crashHook}
+	if err := run.save(); err != nil {
+		return fmt.Errorf("write the restore down: %w", err)
+	}
+	err := b.runRestore(ctx, request, run)
+	if errors.Is(err, errCrash) {
+		return err
+	}
+	result := restoreResult{ID: request.ID, App: request.App, Database: run.mark.Database, State: protocol.RestoreDone, FinishedAt: time.Now().UTC()}
+	if err != nil && run.mark.Copy != "" {
+		err = fmt.Errorf("%w. The copy from before is undo-%s: going back to it puts the data back as it was", err, run.mark.Copy)
+	}
+	if err != nil {
+		result.State, result.Error = protocol.RestoreFailed, err.Error()
+	}
+	b.saveResult(result)
+	b.dropMark(request.ID)
+	// The control plane may have lost the session meanwhile: it learns
+	// how the restore ended here, or from the next list.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		backups := protocol.Backups{App: request.App, Databases: []protocol.DatabaseBackup{}, Restores: b.restoreStates(request.App)}
+		if database, err := b.one(request.App, run.mark.Database); err == nil {
+			backups.Databases = append(backups.Databases, b.status(ctx, request.App, database, false))
+		}
+		if b.send != nil {
+			b.send(protocol.TypeBackupStatus, "", backups)
+		}
+	}()
+	if err != nil {
+		return err
+	}
+	slog.Info("backup: restored", "app", request.App, "database", run.mark.Database, "at", request.At, "copy", request.Copy)
+	return nil
+}
+
+// runRestore checks the restore and has the engine run it.
+func (b *backups) runRestore(ctx context.Context, request protocol.BackupRestore, run *restoreRun) error {
 	if _, err := b.ready(); err != nil {
 		return err
 	}
 	database, err := b.one(request.App, request.Database)
 	if err != nil {
+		return err
+	}
+	run.mark.Database, run.mark.Postgres, run.mark.Service = database.Path, database.Postgres(), database.Service
+	if err := run.save(); err != nil {
 		return err
 	}
 	to := moment{}
@@ -563,12 +614,7 @@ func (b *backups) restore(ctx context.Context, request protocol.BackupRestore) e
 		if !protocol.ValidCopyID(request.Copy) {
 			return errors.New("this is not a copy before a restore: pick one from the list")
 		}
-		file, err := b.fetchCopy(ctx, request.App, database, request.Copy)
-		if err != nil {
-			return err
-		}
-		defer os.Remove(file)
-		to.File = file
+		to.Copy = request.Copy
 	case request.At != nil:
 		to.At = request.At.UTC()
 		if to.At.After(time.Now().Add(time.Minute)) {
@@ -585,43 +631,20 @@ func (b *backups) restore(ctx context.Context, request protocol.BackupRestore) e
 	}
 	b.restoring[k] = true
 	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		delete(b.restoring, k)
+		b.mu.Unlock()
+		b.reconcile()
+	}()
 	e := b.engine(request.App, database)
-	// The restore writes down where it is, so an agent that stops in the
-	// middle ends it when it starts again (recoverRestores).
-	run := &restoreRun{b: b, mark: restoreMark{ID: request.ID, App: request.App, Database: database.Path, Postgres: database.Postgres(), StartedAt: time.Now().UTC()}}
 	run.keepCopy = func() (string, error) {
 		if b.keepHook != nil {
 			return b.keepHook()
 		}
 		return b.keepCopy(context.WithoutCancel(ctx), request.App, database, e)
 	}
-	run.step(stepPreparing)
-	err = e.GoBack(ctx, to, run)
-	b.mu.Lock()
-	delete(b.restoring, k)
-	b.mu.Unlock()
-	b.reconcile()
-	result := restoreResult{ID: request.ID, App: request.App, Database: database.Path, State: protocol.RestoreDone, FinishedAt: time.Now().UTC()}
-	if err != nil && run.mark.Copy != "" {
-		err = fmt.Errorf("%w. The copy from before is undo-%s: going back to it puts the data back as it was", err, run.mark.Copy)
-	}
-	if err != nil {
-		result.State, result.Error = protocol.RestoreFailed, err.Error()
-	}
-	b.saveResult(result)
-	b.dropMark(request.App, database.Path)
-	// The control plane may have lost the session meanwhile: it learns
-	// how the restore ended here, or from the next list.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
-		defer cancel()
-		b.send(protocol.TypeBackupStatus, "", protocol.Backups{App: request.App, Databases: []protocol.DatabaseBackup{b.status(ctx, request.App, database, false)}, Restores: b.restoreStates(request.App)})
-	}()
-	if err != nil {
-		return err
-	}
-	slog.Info("backup: restored", "app", request.App, "database", database.Path, "at", request.At, "copy", request.Copy)
-	return nil
+	return e.GoBack(ctx, to, run)
 }
 
 // copyExt is the file ending of a database's full copies.
@@ -777,7 +800,6 @@ func (b *backups) fetchCopy(ctx context.Context, app string, database protocol.D
 // control plane. While a database has nothing in the bucket yet, it tries
 // again soon.
 func (b *backups) checks(ctx context.Context) {
-	b.removeThrowaways(ctx)
 	timer := time.NewTimer(firstCheck)
 	defer timer.Stop()
 	for {
@@ -851,6 +873,7 @@ func (b *backups) sweepLoop(ctx context.Context) {
 // sweepOnce sweeps the workspace's folder, also the apps that are gone, in
 // the default bucket and in every bucket of an app.
 func (b *backups) sweepOnce(ctx context.Context, now time.Time) {
+	b.sweepVolumes(ctx, now)
 	b.mu.Lock()
 	if b.defaultBucket == nil {
 		b.mu.Unlock()
@@ -932,6 +955,9 @@ type appStop struct {
 	app         string
 	composeFile string
 	services    []string
+	// recreate starts with up -d, which puts a Postgres on the volume it
+	// was switched to.
+	recreate bool
 }
 
 func (a *apps) stopper(ctx context.Context, app string, services ...string) *appStop {
@@ -954,7 +980,11 @@ func (s *appStop) stop() error {
 func (s *appStop) startAfter(err error) error {
 	ctx, cancel := context.WithTimeout(s.ctx, composeTimeout)
 	defer cancel()
-	startErr := s.a.compose(ctx, s.app, s.composeFile, func(string, ...any) {}, append([]string{"start"}, s.services...)...)
+	args := append([]string{"start"}, s.services...)
+	if s.recreate {
+		args = append([]string{"up", "-d"}, s.services...)
+	}
+	startErr := s.a.compose(ctx, s.app, s.composeFile, func(string, ...any) {}, args...)
 	if startErr != nil {
 		startErr = fmt.Errorf("start the app again: %w", startErr)
 		if err == nil {
@@ -970,8 +1000,7 @@ func (s *appStop) startAfter(err error) error {
 // for databases of many gigabytes on slow disks.
 const (
 	composeTimeout = 10 * time.Minute
-	swapTimeout    = 6 * time.Hour
-	dumpTimeout    = 6 * time.Hour
+	switchTimeout  = time.Hour
 )
 
 // spareSpace is what a disk keeps free beyond what a restore needs.

@@ -51,8 +51,9 @@ type Backups struct {
 	// Restores are the restores of the app's databases that run now, and
 	// how the last one of each ended, by the ID the control plane gave
 	// it. A restore outlives a session, so the control plane learns here
-	// how one ended that it lost track of. Agents before it send none.
-	Restores []RestoreState `json:"restores,omitempty"`
+	// how one ended that it lost track of. An agent that reports restores
+	// sends a list, empty or not; agents before it send none (null).
+	Restores []RestoreState `json:"restores"`
 }
 
 // RestoreState is how a restore stands on the server: running, done or
@@ -95,19 +96,21 @@ type DatabaseBackup struct {
 	Note string `json:"note,omitempty"`
 }
 
-// Copy is the full copy of a database moin took before a restore. Its ID
-// is the time it was taken, in CopyIDLayout.
+// Copy is the state of a database before a restore, which undoes it: for
+// SQLite the full copy moin took, for Postgres the volume the restore
+// switched away from. Its ID is the time of the restore, in CopyIDLayout.
+// Size is 0 when moin does not know it.
 type Copy struct {
 	ID   string    `json:"id"`
 	At   time.Time `json:"at"`
 	Size int64     `json:"size"`
 }
 
-// BackupRestore puts one database back: to the moment At, or to the copy
-// Copy took before an earlier restore, which undoes that restore. Either
-// way the agent first takes one full copy of the database as it is, so
-// this restore can be undone too. The app stops for the swap and starts
-// again.
+// BackupRestore puts one database back: to the moment At, or to the state
+// Copy before an earlier restore, which undoes that restore. The agent
+// builds the restored state beside the live one and switches in one step;
+// the state before stays, so this restore can be undone too. The app
+// stops for the switch and starts again.
 type BackupRestore struct {
 	// ID is the control plane's name for the restore, which the agent
 	// reports it under; agents before it ignore it.

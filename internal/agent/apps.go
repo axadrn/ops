@@ -1380,8 +1380,15 @@ func (a *apps) stop(ctx context.Context, app string) error {
 	return err
 }
 
-// compose runs docker compose on a release and streams its output as log lines.
+// compose runs docker compose on a release and streams its output as log
+// lines. A Postgres a restore switched to another volume runs on that one,
+// in every release (applyVolumes).
 func (a *apps) compose(ctx context.Context, app, composeFile string, logf func(string, ...any), args ...string) error {
+	if a.backups != nil {
+		if err := a.backups.applyVolumes(app, composeFile); err != nil {
+			return fmt.Errorf("point the database at its volume since the last restore: %w", err)
+		}
+	}
 	return a.run(ctx, logf, nil, append([]string{"compose", "-p", project(app), "-f", composeFile, "--progress", "plain"}, args...)...)
 }
 
