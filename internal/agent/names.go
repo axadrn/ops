@@ -22,7 +22,7 @@ const (
 	labelToken      = ourName + ".token"
 	labelWalg       = ourName + ".walg"
 	labelWalgTarget = ourName + ".walg.target"
-	labelDrill      = ourName + ".drill"
+	labelThrowaway  = ourName + ".throwaway"
 )
 
 // project is the Compose project of an app.

@@ -27,12 +27,12 @@ func actions(changes []backupChange) string {
 func TestBackupChanges(t *testing.T) {
 	day1 := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
 	day2 := day1.Add(24 * time.Hour)
-	ok := model.BackupStatus{Database: "data/app.db", VerifiedAt: &day1}
-	broken := model.BackupStatus{Database: "data/app.db", VerifiedAt: &day1, Error: "continuous backup: access denied"}
-	drillBad := model.BackupStatus{Database: "data/app.db", VerifiedAt: &day2, Error: "restore drill failed: checksum", DrillError: "restore drill failed: checksum"}
+	ok := model.BackupStatus{Database: "data/app.db", CheckedAt: &day1}
+	broken := model.BackupStatus{Database: "data/app.db", CheckedAt: &day1, Error: "continuous backup: access denied"}
+	checkBad := model.BackupStatus{Database: "data/app.db", CheckedAt: &day2, Error: "restore check failed: checksum", CheckError: "restore check failed: checksum"}
 	day3 := day2.Add(24 * time.Hour)
-	drillGood := model.BackupStatus{Database: "data/app.db", VerifiedAt: &day3}
-	restarted := model.BackupStatus{Database: "data/app.db", DrillError: "restore drill failed: checksum"}
+	checkGood := model.BackupStatus{Database: "data/app.db", CheckedAt: &day3}
+	restarted := model.BackupStatus{Database: "data/app.db", CheckError: "restore check failed: checksum"}
 	for _, test := range []struct {
 		name            string
 		previous        model.BackupStatus
@@ -40,15 +40,15 @@ func TestBackupChanges(t *testing.T) {
 		now             model.BackupStatus
 		want, wantError string
 	}{
-		{"first report healthy", model.BackupStatus{}, false, ok, "backup.drill_passed", ""},
+		{"first report healthy", model.BackupStatus{}, false, ok, "backup.checked", ""},
 		{"breaks", ok, true, broken, "backup.failed", "continuous backup: access denied"},
 		{"still broken: no second alert", broken, true, broken, "", ""},
 		{"works again", broken, true, ok, "backup.recovered", ""},
-		{"restore check fails, backups fine", ok, true, drillBad, "drill.failed", "restore drill failed: checksum"},
-		{"restore check still failing", drillBad, true, drillBad, "", ""},
-		{"agent restarted, no check yet", drillBad, true, restarted, "", ""},
-		{"restore check passes again", drillBad, true, drillGood, "drill.recovered,backup.drill_passed", ""},
-		{"old agent: check failure counts as backup failure", ok, true, model.BackupStatus{Database: "data/app.db", VerifiedAt: &day2, Error: "restore drill failed: x"}, "backup.failed,backup.drill_passed", "restore drill failed: x"},
+		{"restore check fails, backups fine", ok, true, checkBad, "check.failed", "restore check failed: checksum"},
+		{"restore check still failing", checkBad, true, checkBad, "", ""},
+		{"agent restarted, no check yet", checkBad, true, restarted, "", ""},
+		{"restore check passes again", checkBad, true, checkGood, "check.recovered,backup.checked", ""},
+		{"old agent: check failure counts as backup failure", ok, true, model.BackupStatus{Database: "data/app.db", CheckedAt: &day2, Error: "restore check failed: x"}, "backup.failed,backup.checked", "restore check failed: x"},
 	} {
 		changes := backupChanges(test.previous, test.known, test.now)
 		if got := actions(changes); got != test.want {
@@ -159,13 +159,13 @@ func TestBackupAndDiskAlertsReachEveryDestination(t *testing.T) {
 	if text := decoded(t, f.chat.last(t, "/slack/T0/B0/XXXX").body)["text"]; text != "*🟢 Backups of shop work again*\nDatabase: postgres-db, app shop. Every change goes to your bucket again.\n<"+backups+"|Open in moin>" {
 		t.Errorf("slack backup.recovered = %q", text)
 	}
-	f.alerts.Send(owner.WorkspaceID, "drill.failed", "shop", map[string]string{"database": "data/app.db", "error": "restore drill failed: integrity check"}, at)
-	if text := decoded(t, f.chat.last(t, "/slack/T0/B0/XXXX").body)["text"]; text != "*🔴 Daily check of shop failed*\nDatabase: data/app.db, app shop.\nError: restore drill failed: integrity check\nThe daily check could not go back to the newest state. Download a copy now and look: moin backups shop\n<"+backups+"|Open in moin>" {
-		t.Errorf("slack drill.failed = %q", text)
+	f.alerts.Send(owner.WorkspaceID, "check.failed", "shop", map[string]string{"database": "data/app.db", "error": "restore check failed: integrity check"}, at)
+	if text := decoded(t, f.chat.last(t, "/slack/T0/B0/XXXX").body)["text"]; text != "*🔴 Daily check of shop failed*\nDatabase: data/app.db, app shop.\nError: restore check failed: integrity check\nThe daily check could not go back to the newest state. Download a copy now and look: moin backups shop\n<"+backups+"|Open in moin>" {
+		t.Errorf("slack check.failed = %q", text)
 	}
-	f.alerts.Send(owner.WorkspaceID, "drill.recovered", "shop", map[string]string{"database": "data/app.db"}, at)
-	if body := string(f.chat.last(t, "/hook").body); body != `{"event":"drill.recovered","workspace":"owner-workspace","app":"shop","server":"web-1","domain":"","reason":"","since":"","duration":"","url":"`+backups+`"}` {
-		t.Errorf("webhook drill.recovered = %s", body)
+	f.alerts.Send(owner.WorkspaceID, "check.recovered", "shop", map[string]string{"database": "data/app.db"}, at)
+	if body := string(f.chat.last(t, "/hook").body); body != `{"event":"check.recovered","workspace":"owner-workspace","app":"shop","server":"web-1","domain":"","reason":"","since":"","duration":"","url":"`+backups+`"}` {
+		t.Errorf("webhook check.recovered = %s", body)
 	}
 	f.alerts.Send(owner.WorkspaceID, "disk.full", "web-1", map[string]string{"used_percent": "93", "used": "37 GB", "total": "40 GB"}, at)
 	if text := decoded(t, f.chat.last(t, "/telegram/bot"+telegramToken+"/sendMessage").body)["text"]; text != "<b>🟠 Disk of web-1 is 93% full</b>\n37 GB of 40 GB used.\nA full disk stops databases from writing. Free space or grow the disk. Apps on it: shop.\n<a href=\""+servers+"\">Open in moin</a>" {

@@ -13,7 +13,7 @@ import (
 	"github.com/axadrn/moin/protocol"
 )
 
-// TestPostgresDocker runs the browser, a dump, a restore and a drill
+// TestPostgresDocker runs the browser, a dump, a restore and a check
 // against a real postgres:17, labeled as the service db of the app pgtest.
 // Run with: go test -tags docker -run PostgresDocker ./internal/agent/
 func TestPostgresDocker(t *testing.T) {

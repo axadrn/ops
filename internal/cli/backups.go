@@ -195,8 +195,8 @@ func printBackups(w io.Writer, app string, list client.AppBackups, now time.Time
 			fmt.Fprintln(w, style.Muted.Render("  "+database.Error))
 		case database.Since == nil:
 			fmt.Fprintln(w, "  "+style.Muted.Render("starting: nothing in the bucket yet"))
-		case database.VerifiedAt != nil:
-			fmt.Fprintln(w, "  "+style.Success.Render(style.SymbolDone+" backed up · checked "+human.Ago(*database.VerifiedAt, now)))
+		case database.CheckedAt != nil:
+			fmt.Fprintln(w, "  "+style.Success.Render(style.SymbolDone+" backed up · checked "+human.Ago(*database.CheckedAt, now)))
 		default:
 			fmt.Fprintln(w, "  "+style.Success.Render(style.SymbolDone+" backed up · not checked yet"))
 		}

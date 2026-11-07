@@ -19,12 +19,26 @@ type AppBackups struct {
 	Databases    []DatabaseBackups `json:"databases"`
 }
 
+// DatabaseBackup is how one database is backed up, as the agent reports
+// it: protocol.DatabaseBackup under the API's own names.
+type DatabaseBackup struct {
+	Database     string          `json:"database"`
+	Kind         string          `json:"kind,omitempty"`
+	Since        *time.Time      `json:"since,omitempty"`
+	ReplicatedAt *time.Time      `json:"replicated_at,omitempty"`
+	CheckedAt    *time.Time      `json:"checked_at,omitempty"`
+	Copies       []protocol.Copy `json:"copies,omitempty"`
+	Error        string          `json:"error,omitempty"`
+	CheckError   string          `json:"check_error,omitempty"`
+	Note         string          `json:"note,omitempty"`
+}
+
 // DatabaseBackups is the backup of one database: what the agent reports,
 // problem as one short sentence when it does not work, and the moments a
 // restore can go back to, quick ones first, then the remembered ones and
 // the copies before restores, newest first.
 type DatabaseBackups struct {
-	protocol.DatabaseBackup
+	DatabaseBackup
 	Problem string   `json:"problem,omitempty"`
 	Moments []Moment `json:"moments"`
 }
@@ -50,7 +64,7 @@ func NewAppBackups(apps *service.AppService, app *model.App, databases []service
 		}
 	}
 	for _, database := range databases {
-		shown := DatabaseBackups{DatabaseBackup: database.DatabaseBackup, Problem: database.Problem, Moments: []Moment{}}
+		shown := DatabaseBackups{DatabaseBackup: DatabaseBackup(database.DatabaseBackup), Problem: database.Problem, Moments: []Moment{}}
 		for _, moment := range database.Moments {
 			shown.Moments = append(shown.Moments, Moment{ID: moment.ID, Label: moment.Label, At: moment.At, Kind: moment.Kind})
 		}

@@ -226,7 +226,7 @@ templ backupState(backup service.DatabaseBackups, known bool, database string, n
 					</div>
 				case backup.Since != nil:
 					@kit.Dot(kit.StateLive)
-					<span class="min-w-0 flex-1 truncate font-medium" data-verified?={ backup.VerifiedAt != nil } title={ verifiedStamp(backup) }>{ "Backed up · " + checkedText(backup, now) }</span>
+					<span class="min-w-0 flex-1 truncate font-medium" data-checked?={ backup.CheckedAt != nil } title={ checkedStamp(backup) }>{ "Backed up · " + checkedText(backup, now) }</span>
 				default:
 					@kit.Dot(kit.StateRunning)
 					@kit.RowText("Starting", "")
@@ -236,17 +236,17 @@ templ backupState(backup service.DatabaseBackups, known bool, database string, n
 }
 
 func checkedText(backup service.DatabaseBackups, now time.Time) string {
-	if backup.VerifiedAt == nil {
+	if backup.CheckedAt == nil {
 		return "not checked yet"
 	}
-	return "checked " + human.Ago(*backup.VerifiedAt, now)
+	return "checked " + human.Ago(*backup.CheckedAt, now)
 }
 
-func verifiedStamp(backup service.DatabaseBackups) string {
-	if backup.VerifiedAt == nil {
+func checkedStamp(backup service.DatabaseBackups) string {
+	if backup.CheckedAt == nil {
 		return ""
 	}
-	return "Went back and checked " + stamp(*backup.VerifiedAt)
+	return "Went back and checked " + stamp(*backup.CheckedAt)
 }
 
 // momentPick is one moment to pick for a restore: what it is and when.

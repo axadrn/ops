@@ -45,7 +45,7 @@ func TestBackupsPickTheBucket(t *testing.T) {
 		Older:   []service.Bucket{{Name: "default"}},
 		Now:     now,
 		Databases: []service.DatabaseBackups{{
-			DatabaseBackup: protocol.DatabaseBackup{Database: "/data/app.db", Since: &since, VerifiedAt: &checked},
+			DatabaseBackup: protocol.DatabaseBackup{Database: "/data/app.db", Since: &since, CheckedAt: &checked},
 			Moments: []service.Moment{
 				{ID: "1h", Label: "1 hour ago", At: now.Add(-time.Hour), Kind: service.MomentAgo},
 				{ID: "before-v12", Label: "Before v12", At: now.Add(-26 * time.Hour), Kind: "deploy"},

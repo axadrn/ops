@@ -337,10 +337,10 @@ func (m model) backupsTab(u ui, w, h int) string {
 			kv("backup", u.good("every change")+u.muted(" · back to "+d.Since.Local().Format("Jan 2 15:04")))
 		}
 		switch {
-		case d.DrillError != "":
+		case d.CheckError != "":
 			kv("daily check", u.bad("failed"))
-		case d.VerifiedAt != nil:
-			kv("daily check", u.good("passed")+u.muted(" "+human.Ago(*d.VerifiedAt, now)))
+		case d.CheckedAt != nil:
+			kv("daily check", u.good("passed")+u.muted(" "+human.Ago(*d.CheckedAt, now)))
 		default:
 			kv("daily check", u.faint("not yet"))
 		}

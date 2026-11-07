@@ -720,7 +720,7 @@ func (s *AppService) receiveBackupStatus(serverID string, backups protocol.Backu
 // that start failing or work again, a restore check that fails or passes
 // again, and each passed check go into the activity as moin itself; the
 // changes alert. The backups' own error and the check's are apart: an
-// agent from before drill_error sends the check's failure as Error alone.
+// agent from before check_error sends the check's failure as Error alone.
 func (s *AppService) storeBackupStatus(app *model.App, backups protocol.Backups) {
 	appID := app.ID
 	before := map[string]model.BackupStatus{}
@@ -736,14 +736,14 @@ func (s *AppService) storeBackupStatus(app *model.App, backups protocol.Backups)
 			Database:     database.Database,
 			Since:        database.Since,
 			ReplicatedAt: database.ReplicatedAt,
-			VerifiedAt:   database.VerifiedAt,
+			CheckedAt:    database.CheckedAt,
 			Error:        clipText(database.Error, 2000),
-			DrillError:   clipText(database.DrillError, 2000),
+			CheckError:   clipText(database.CheckError, 2000),
 			UpdatedAt:    s.now().UTC(),
 		}
-		if database.VerifiedAt == nil {
+		if database.CheckedAt == nil {
 			// No check since the agent started: the last one still stands.
-			status.DrillError = previous.DrillError
+			status.CheckError = previous.CheckError
 		}
 		for _, change := range backupChanges(previous, known, status) {
 			s.servers.record(System(app.WorkspaceID), change.action, "app", app.Name, change.details)
@@ -778,17 +778,17 @@ func backupChanges(previous model.BackupStatus, known bool, now model.BackupStat
 	case backupError == "" && known && before != "":
 		add("backup.recovered", map[string]string{})
 	}
-	if now.VerifiedAt == nil {
+	if now.CheckedAt == nil {
 		return changes
 	}
 	switch {
-	case now.DrillError != "" && (!known || previous.DrillError == ""):
-		add("drill.failed", map[string]string{"error": clipText(now.DrillError, 300)})
-	case now.DrillError == "" && known && previous.DrillError != "":
-		add("drill.recovered", map[string]string{})
+	case now.CheckError != "" && (!known || previous.CheckError == ""):
+		add("check.failed", map[string]string{"error": clipText(now.CheckError, 300)})
+	case now.CheckError == "" && known && previous.CheckError != "":
+		add("check.recovered", map[string]string{})
 	}
-	if now.DrillError == "" && (!known || previous.VerifiedAt == nil || now.VerifiedAt.After(*previous.VerifiedAt)) {
-		add("backup.drill_passed", map[string]string{"verified_at": now.VerifiedAt.UTC().Format(time.RFC3339)})
+	if now.CheckError == "" && (!known || previous.CheckedAt == nil || now.CheckedAt.After(*previous.CheckedAt)) {
+		add("backup.checked", map[string]string{"checked_at": now.CheckedAt.UTC().Format(time.RFC3339)})
 	}
 	return changes
 }

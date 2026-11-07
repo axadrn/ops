@@ -490,8 +490,8 @@ func (b *backups) status(ctx context.Context, app string, database protocol.Data
 	b.mu.Unlock()
 	if !last.at.IsZero() {
 		at := last.at
-		backup.VerifiedAt = &at
-		backup.DrillError = last.err
+		backup.CheckedAt = &at
+		backup.CheckError = last.err
 		if last.err != "" && backup.Error == "" {
 			backup.Error = last.err
 		}

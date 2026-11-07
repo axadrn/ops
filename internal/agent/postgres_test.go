@@ -201,7 +201,7 @@ func TestPgError(t *testing.T) {
 	}
 }
 
-// TestServiceImage: the drill of a Postgres that is down takes the image
+// TestServiceImage: the check of a Postgres that is down takes the image
 // of its service from the live release.
 func TestServiceImage(t *testing.T) {
 	dir := t.TempDir()

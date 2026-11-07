@@ -345,7 +345,7 @@ func TestPostgresGoBack(t *testing.T) {
 	if slots := sql(`SELECT count(*) FROM pg_replication_slots;`); slots != "0" {
 		t.Errorf("slots left: %s", slots)
 	}
-	if out, _ := exec.Command("docker", "ps", "-aq", "--filter", "label=moin.drill").Output(); strings.TrimSpace(string(out)) != "" {
+	if out, _ := exec.Command("docker", "ps", "-aq", "--filter", "label=moin.throwaway").Output(); strings.TrimSpace(string(out)) != "" {
 		t.Errorf("throwaway containers left: %s", out)
 	}
 	for _, prefix := range []string{"moin-restore-", "moin-check-"} {

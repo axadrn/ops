@@ -25,7 +25,7 @@ One alert per event, never one per minute, and one when it is fixed. Each links 
 | `server.down`, `server.up` | an agent has not answered for two minutes, with the apps on the server; back online |
 | `deploy.failed` | a deploy fails, with its number, the error and the version that runs now ([Deploy](/docs/guides/deploy#what-a-deploy-does)) |
 | `backup.failed`, `backup.recovered` | the backup of a database has not reached the bucket for three minutes, or its history lost its place and starts again; and when it works again. What is in the bucket stays ([Backups](/docs/guides/backups)) |
-| `drill.failed`, `drill.recovered` | the daily check could not go back to the newest state; passes again |
+| `check.failed`, `check.recovered` | the daily check could not go back to the newest state; passes again |
 | `disk.full`, `disk.ok` | the data disk of a server is over 90%; under 85% again |
 | `update.available` | a newer version of a [catalog](/docs/guides/catalog) app is out, once per version |
 

@@ -21,7 +21,7 @@ var AlertKinds = []string{AlertSlack, AlertDiscord, AlertTelegram, AlertWebhook}
 // order the forms offer them.
 var AlertEvents = []string{
 	"uptime.down", "uptime.up", "server.down", "server.up", "deploy.failed",
-	"backup.failed", "backup.recovered", "drill.failed", "drill.recovered", "disk.full", "disk.ok",
+	"backup.failed", "backup.recovered", "check.failed", "check.recovered", "disk.full", "disk.ok",
 	"update.available",
 }
 
@@ -42,9 +42,9 @@ func AlertEventLabel(event string) string {
 		return "Backup failed"
 	case "backup.recovered":
 		return "Backups work again"
-	case "drill.failed":
+	case "check.failed":
 		return "Daily check failed"
-	case "drill.recovered":
+	case "check.recovered":
 		return "Daily check passes again"
 	case "disk.full":
 		return "Disk almost full"

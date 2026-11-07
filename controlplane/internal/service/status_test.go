@@ -43,10 +43,10 @@ func TestStatusIssues(t *testing.T) {
 	finishDeploy(t, apps, app.ID, 1, model.DeploySucceeded)
 	finishDeploy(t, apps, app.ID, 2, model.DeployFailed)
 	now := time.Now().UTC()
-	if err := apps.apps.SetBackupStatus(model.BackupStatus{AppID: app.ID, Database: "postgres-db", Error: "WAL-G stopped", DrillError: "", UpdatedAt: now}); err != nil {
+	if err := apps.apps.SetBackupStatus(model.BackupStatus{AppID: app.ID, Database: "postgres-db", Error: "WAL-G stopped", CheckError: "", UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := apps.apps.SetBackupStatus(model.BackupStatus{AppID: app.ID, Database: "data-app.db", Error: "restore failed", DrillError: "restore failed", UpdatedAt: now}); err != nil {
+	if err := apps.apps.SetBackupStatus(model.BackupStatus{AppID: app.ID, Database: "data-app.db", Error: "restore failed", CheckError: "restore failed", UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := servers.servers.SetDiskFull(server.ID, true, now); err != nil {
@@ -74,7 +74,7 @@ func TestStatusIssues(t *testing.T) {
 	for kind, path := range map[string]string{
 		IssueDeployFailed: "/apps/shop",
 		IssueBackupFailed: "/apps/shop/data?db=postgres-db",
-		IssueDrillFailed:  "/apps/shop/data?db=data-app.db",
+		IssueCheckFailed:  "/apps/shop/data?db=data-app.db",
 		IssueDomainDown:   "/apps/shop/uptime",
 		IssueDiskFull:     "/servers/" + server.ID + "/metrics",
 		IssueAgentBehind:  "/servers",

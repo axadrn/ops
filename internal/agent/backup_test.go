@@ -152,7 +152,7 @@ func TestBackups(t *testing.T) {
 	b.checkAll(ctx)
 	select {
 	case report := <-reports:
-		if report.App != app || report.Databases[0].VerifiedAt == nil || report.Databases[0].Error != "" || report.Databases[0].Since == nil {
+		if report.App != app || report.Databases[0].CheckedAt == nil || report.Databases[0].Error != "" || report.Databases[0].Since == nil {
 			t.Fatalf("check report = %+v", report)
 		}
 	case <-time.After(5 * time.Second):
@@ -426,7 +426,7 @@ func TestCheckBeforeRecording(t *testing.T) {
 		t.Error("a check before the first change does not try again soon")
 	}
 	report := <-reports
-	if report.Databases[0].VerifiedAt != nil || report.Databases[0].Error != "" {
+	if report.Databases[0].CheckedAt != nil || report.Databases[0].Error != "" {
 		t.Errorf("report = %+v, want no check yet", report.Databases[0])
 	}
 }
@@ -473,7 +473,7 @@ func TestBrokenHistoryFailsTheCheck(t *testing.T) {
 	}
 	b.checkAll(ctx)
 	status := b.status(ctx, app, database, false)
-	if status.VerifiedAt == nil || !strings.Contains(status.DrillError, "the daily check failed") || status.Error == "" {
+	if status.CheckedAt == nil || !strings.Contains(status.CheckError, "the daily check failed") || status.Error == "" {
 		t.Fatalf("status of a broken history = %+v", status)
 	}
 }

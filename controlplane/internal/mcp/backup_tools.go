@@ -14,7 +14,7 @@ import (
 func registerBackupTools(server *mcpsdk.Server, services Services) {
 	tools := moinTools{services: services}
 	mcpsdk.AddTool(server, newTool("get_backups", "List backups",
-		"Lists how every database of an app is backed up and the moments a restore can go back to: quick ones (1 minute, 15 minutes, 1 hour ago, yesterday this time), the moments moin remembered before a deploy, a data edit or a catalog update, and the copies it took before each restore (undo-...), all inside the last 7 days. Each database has problem, one short sentence, when its backup does not work, and verified_at, the newest daily check that passed. Needs the read scope.",
+		"Lists how every database of an app is backed up and the moments a restore can go back to: quick ones (1 minute, 15 minutes, 1 hour ago, yesterday this time), the moments moin remembered before a deploy, a data edit or a catalog update, and the copies it took before each restore (undo-...), all inside the last 7 days. Each database has problem, one short sentence, when its backup does not work, and checked_at, the newest daily check that passed. Needs the read scope.",
 		readOnly("")), Read(member(services, tools.getBackups)))
 	mcpsdk.AddTool(server, newTool("restore_app", "Restore a database",
 		"Puts a database of an app back to a moment from get_backups, by its id or label, or to a time in its history (RFC 3339, to the minute). moin takes one full copy of the database first and keeps it 7 days, so the restore can be undone with its undo- moment; the app stops for the swap and starts again. Ask the user first: confirm must be the app's name, typed out. Needs a token with read and write access.",

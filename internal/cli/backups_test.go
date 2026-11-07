@@ -14,7 +14,7 @@ import (
 // back to, with the commands for both.
 func TestBackupsList(t *testing.T) {
 	api := &fakeAPI{answers: map[string]string{"GET /api/v1/apps/shop/backups": `{"bucket":"main","older_buckets":[],"databases":[
-		{"database":"/data/app.db","since":"2026-11-01T10:00:00Z","verified_at":"` + time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339) + `","moments":[
+		{"database":"/data/app.db","since":"2026-11-01T10:00:00Z","checked_at":"` + time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339) + `","moments":[
 			{"id":"1h","label":"1 hour ago","at":"2026-11-07T13:00:00Z","kind":"ago"},
 			{"id":"before-v12","label":"Before v12","at":"2026-11-07T09:30:00Z","kind":"deploy"}]},
 		{"database":"postgres-db","kind":"postgres","error":"dial tcp: i/o timeout","problem":"The bucket can't be reached.","moments":[]}]}`}}

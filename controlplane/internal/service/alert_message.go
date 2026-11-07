@@ -64,10 +64,10 @@ func (s *AlertService) message(workspace *model.Workspace, action, target string
 		message = s.backupFailedMessage(event)
 	case "backup.recovered":
 		message = s.backupRecoveredMessage(event)
-	case "drill.failed":
-		message = s.drillFailedMessage(event)
-	case "drill.recovered":
-		message = s.drillRecoveredMessage(event)
+	case "check.failed":
+		message = s.checkFailedMessage(event)
+	case "check.recovered":
+		message = s.checkRecoveredMessage(event)
 	case "disk.full":
 		message = s.diskFullMessage(event)
 	case "disk.ok":
@@ -172,7 +172,7 @@ func (s *AlertService) backupRecoveredMessage(e alertEvent) alertMessage {
 	}
 }
 
-func (s *AlertService) drillFailedMessage(e alertEvent) alertMessage {
+func (s *AlertService) checkFailedMessage(e alertEvent) alertMessage {
 	reason := clipText(e.details["error"], 300)
 	return alertMessage{
 		Symbol: "🔴", Heading: "Daily check of " + e.target + " failed",
@@ -186,7 +186,7 @@ func (s *AlertService) drillFailedMessage(e alertEvent) alertMessage {
 	}
 }
 
-func (s *AlertService) drillRecoveredMessage(e alertEvent) alertMessage {
+func (s *AlertService) checkRecoveredMessage(e alertEvent) alertMessage {
 	return alertMessage{
 		Symbol: "🟢", Heading: "Daily check of " + e.target + " passes again",
 		Lines:   []string{"Database: " + e.details["database"] + ", app " + e.target + ". Going back works again."},

@@ -15,13 +15,13 @@ const (
 	IssueServerDown   = "server.down"
 	IssueDeployFailed = "deploy.failed"
 	IssueBackupFailed = "backup.failed"
-	IssueDrillFailed  = "drill.failed"
+	IssueCheckFailed  = "check.failed"
 	IssueDomainDown   = "domain.down"
 	IssueDiskFull     = "disk.full"
 	IssueAgentBehind  = "agent.behind"
 )
 
-var issueOrder = map[string]int{IssueServerDown: 0, IssueDeployFailed: 1, IssueBackupFailed: 2, IssueDrillFailed: 3, IssueDomainDown: 4, IssueDiskFull: 5, IssueAgentBehind: 6}
+var issueOrder = map[string]int{IssueServerDown: 0, IssueDeployFailed: 1, IssueBackupFailed: 2, IssueCheckFailed: 3, IssueDomainDown: 4, IssueDiskFull: 5, IssueAgentBehind: 6}
 
 // StatusIssue is one thing that needs you: what kind, on what, in words,
 // and where to fix it, as a path under the workspace.
@@ -111,14 +111,14 @@ func (s *StatusService) Status(workspaceID string) (WorkspaceStatus, error) {
 		if err == nil {
 			for _, backup := range backups {
 				status.Databases++
-				if backup.VerifiedAt != nil && backup.VerifiedAt.After(day) {
+				if backup.CheckedAt != nil && backup.CheckedAt.After(day) {
 					status.BackupsChecked++
 				}
 				if message := backup.BackupError(); message != "" {
 					status.Issues = append(status.Issues, StatusIssue{Kind: IssueBackupFailed, Target: app.Name, Detail: "backups of " + backup.Database + " stopped: " + clipText(message, 120), Path: path + "/data?db=" + url.QueryEscape(backup.Database)})
 				}
-				if backup.DrillError != "" {
-					status.Issues = append(status.Issues, StatusIssue{Kind: IssueDrillFailed, Target: app.Name, Detail: "the daily check of " + backup.Database + " failed", Path: path + "/data?db=" + url.QueryEscape(backup.Database)})
+				if backup.CheckError != "" {
+					status.Issues = append(status.Issues, StatusIssue{Kind: IssueCheckFailed, Target: app.Name, Detail: "the daily check of " + backup.Database + " failed", Path: path + "/data?db=" + url.QueryEscape(backup.Database)})
 				}
 			}
 		}

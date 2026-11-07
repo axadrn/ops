@@ -217,7 +217,7 @@ templ overviewIssueIcon(kind string) {
 			@kit.IconServerOff("size-4")
 		case service.IssueDeployFailed:
 			@kit.IconFailed("size-4")
-		case service.IssueBackupFailed, service.IssueDrillFailed:
+		case service.IssueBackupFailed, service.IssueCheckFailed:
 			@kit.IconShieldOff("size-4")
 		case service.IssueDomainDown:
 			@kit.IconGlobe("size-4")

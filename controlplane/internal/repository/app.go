@@ -309,12 +309,12 @@ func (r *Apps) BackupStatus(appID string) ([]model.BackupStatus, error) {
 
 func (r *Apps) SetBackupStatus(status model.BackupStatus) error {
 	_, err := r.db.Exec(`
-		INSERT INTO backup_status (app_id, database, since, replicated_at, verified_at, error, updated_at, drill_error)
+		INSERT INTO backup_status (app_id, database, since, replicated_at, checked_at, error, updated_at, check_error)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (app_id, database) DO UPDATE SET since = excluded.since, replicated_at = excluded.replicated_at,
-			verified_at = COALESCE(excluded.verified_at, backup_status.verified_at), error = excluded.error, updated_at = excluded.updated_at,
-			drill_error = excluded.drill_error
-	`, status.AppID, status.Database, status.Since, status.ReplicatedAt, status.VerifiedAt, status.Error, status.UpdatedAt, status.DrillError)
+			checked_at = COALESCE(excluded.checked_at, backup_status.checked_at), error = excluded.error, updated_at = excluded.updated_at,
+			check_error = excluded.check_error
+	`, status.AppID, status.Database, status.Since, status.ReplicatedAt, status.CheckedAt, status.Error, status.UpdatedAt, status.CheckError)
 	return err
 }
 

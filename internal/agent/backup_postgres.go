@@ -255,7 +255,7 @@ func (b *backups) recoverInto(ctx context.Context, volume, image, binary, envFil
 	if stamp != "" {
 		script += ` -c recovery_target_time="$1" -c recovery_target_action=promote`
 	}
-	args := []string{"run", "-d", "--name", name, "--label", labelDrill + "=true", "-u", "postgres", "-v", volume + ":/restore", "-e", "PGDATA=/restore"}
+	args := []string{"run", "-d", "--name", name, "--label", labelThrowaway + "=true", "-u", "postgres", "-v", volume + ":/restore", "-e", "PGDATA=/restore"}
 	args = append(args, walgRunArgs(binary, envFile)...)
 	args = append(args, "--entrypoint", "sh", image, "-c", script, timeline, stamp)
 	if out, err := b.apps.output(ctx, "docker", args...); err != nil {
@@ -304,7 +304,7 @@ func (b *backups) walgPath(ctx context.Context, app string, database protocol.Da
 // stopped halfway left: its containers and volumes. The agent calls it
 // when it starts, before any of them runs.
 func (b *backups) removeThrowaways(ctx context.Context) {
-	out, _ := b.apps.output(ctx, "docker", "ps", "-aq", "--filter", "label="+labelDrill)
+	out, _ := b.apps.output(ctx, "docker", "ps", "-aq", "--filter", "label="+labelThrowaway)
 	for _, container := range strings.Fields(out) {
 		_, _ = b.apps.output(ctx, "docker", "rm", "-f", container)
 	}
@@ -473,7 +473,7 @@ func (e *postgresEngine) Check(ctx context.Context) error {
 	defer func() { _, _ = b.apps.output(context.Background(), "docker", "volume", "rm", "-f", volume) }()
 	fetch := func(user string, command ...string) error {
 		name := tempName("fetch-") + randomHex()
-		args := []string{"run", "--rm", "--name", name, "-u", user, "--label", labelDrill + "=true", "-v", volume + ":/restore"}
+		args := []string{"run", "--rm", "--name", name, "-u", user, "--label", labelThrowaway + "=true", "-v", volume + ":/restore"}
 		args = append(args, walgRunArgs(binary, envFile)...)
 		args = append(args, "--entrypoint", "sh", live.image, "-c")
 		defer func() { _, _ = b.apps.output(context.Background(), "docker", "rm", "-f", name) }()
@@ -492,7 +492,7 @@ func (e *postgresEngine) Check(ctx context.Context) error {
 		}
 	}
 	name := "check-" + volume
-	out, err := b.apps.output(ctx, "docker", "run", "-d", "--name", name, "--network", "none", "--label", labelDrill+"=true",
+	out, err := b.apps.output(ctx, "docker", "run", "-d", "--name", name, "--network", "none", "--label", labelThrowaway+"=true",
 		"-u", "postgres", "-v", volume+":/restore", "-e", "PGDATA=/restore/data", "--entrypoint", "sh", live.image, "-c",
 		`touch /restore/data/recovery.signal && exec postgres -D /restore/data -c listen_addresses='' -c restore_command='cp /restore/archive/%f %p' -c recovery_target_timeline="$0"`, strconv.Itoa(timeline))
 	if err != nil {

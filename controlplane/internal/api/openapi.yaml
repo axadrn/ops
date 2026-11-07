@@ -3032,7 +3032,7 @@ paths:
       tags: [Alerts]
       operationId: createAlertDestination
       summary: Add an alert destination
-      description: 'Stores a destination with its URL or bot token sealed with AES-256-GCM. `slack` takes an incoming webhook `url` (https://hooks.slack.com/services/…), `discord` a webhook `url` (https://discord.com/api/webhooks/…), `telegram` a `bot_token` and a `chat_id`, `webhook` any http or https `url`. `events` picks from uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, drill.failed, drill.recovered, disk.full, disk.ok and update.available; empty means all. A webhook answers with its `signing_secret`, this once: every post carries `X-Moin-Signature: sha256=<hex HMAC-SHA256 of the body>`. Only owners and admins.'
+      description: 'Stores a destination with its URL or bot token sealed with AES-256-GCM. `slack` takes an incoming webhook `url` (https://hooks.slack.com/services/…), `discord` a webhook `url` (https://discord.com/api/webhooks/…), `telegram` a `bot_token` and a `chat_id`, `webhook` any http or https `url`. `events` picks from uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, check.failed, check.recovered, disk.full, disk.ok and update.available; empty means all. A webhook answers with its `signing_secret`, this once: every post carries `X-Moin-Signature: sha256=<hex HMAC-SHA256 of the body>`. Only owners and admins.'
       requestBody:
         required: true
         content:
@@ -5482,7 +5482,7 @@ components:
           type: array
           items:
             type: string
-            enum: [uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, drill.failed, drill.recovered, disk.full, disk.ok, update.available]
+            enum: [uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, check.failed, check.recovered, disk.full, disk.ok, update.available]
         failing:
           type: boolean
         failing_since:
@@ -5535,7 +5535,7 @@ components:
           description: Empty for all five.
           items:
             type: string
-            enum: [uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, drill.failed, drill.recovered, disk.full, disk.ok, update.available]
+            enum: [uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, check.failed, check.recovered, disk.full, disk.ok, update.available]
     Registry:
       type: object
       required: [host, username, created_at]
@@ -5645,7 +5645,7 @@ components:
             properties:
               kind:
                 type: string
-                enum: [server.down, deploy.failed, backup.failed, drill.failed, domain.down, disk.full, agent.behind]
+                enum: [server.down, deploy.failed, backup.failed, check.failed, domain.down, disk.full, agent.behind]
               target:
                 type: string
                 description: The app, server or domain.
@@ -6292,7 +6292,7 @@ components:
                 type: string
                 format: date-time
                 description: The newest change in the bucket.
-              verified_at:
+              checked_at:
                 type: string
                 format: date-time
                 description: The newest daily check that passed. It restored the newest state into a throwaway copy and checked it.
@@ -6313,7 +6313,7 @@ components:
               error:
                 type: string
                 description: What the agent and its tools said, for details.
-              drill_error:
+              check_error:
                 type: string
                 description: Why the newest daily check failed.
               problem:
@@ -6639,7 +6639,7 @@ components:
         via:
           type: string
           enum: [web, cli, tui, api, mcp, hook, github, system, '']
-          description: How the change came in. `system` is moin itself, such as a deploy that ended or a restore drill. Events from before the CLI and TUI were told apart say `api` for them. Empty for some older events.
+          description: How the change came in. `system` is moin itself, such as a deploy that ended or a restore check. Events from before the CLI and TUI were told apart say `api` for them. Empty for some older events.
         token:
           type: string
           description: The name of the API token the change came with, empty without one.

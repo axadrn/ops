@@ -136,7 +136,7 @@ var appSummaries = map[string]summarize{
 }
 
 // backupSummaries are about the databases of an app: backups, restore
-// drills and the data browser.
+// checks and the data browser.
 var backupSummaries = map[string]summarize{
 	// Before backups were one history: a full copy by hand.
 	"backup.taken": func(target string, d map[string]string) string {
@@ -164,13 +164,13 @@ var backupSummaries = map[string]summarize{
 	"backup.recovered": func(target string, d map[string]string) string {
 		return "backs up " + d["database"] + " of " + target + " again"
 	},
-	"backup.drill_passed": func(target string, d map[string]string) string {
+	"backup.checked": func(target string, d map[string]string) string {
 		return "checked that " + d["database"] + " of " + target + " can go back"
 	},
-	"drill.failed": func(target string, d map[string]string) string {
+	"check.failed": func(target string, d map[string]string) string {
 		return "could not go back with " + d["database"] + " of " + target + " in the daily check: " + d["error"]
 	},
-	"drill.recovered": func(target string, d map[string]string) string {
+	"check.recovered": func(target string, d map[string]string) string {
 		return "goes back with " + d["database"] + " of " + target + " in the daily check again"
 	},
 	"data.sql": sqlSummary,

@@ -52,21 +52,22 @@ type Backups struct {
 
 // DatabaseBackup is how one database is backed up. Since is the oldest
 // moment a restore can go back to, ReplicatedAt the newest change in the
-// bucket. VerifiedAt is the newest daily check that passed: it restored
+// bucket. CheckedAt is the newest daily check that passed: it restored
 // the latest state into a throwaway copy and checked it. Copies are the
 // copies moin took before each restore of the last 7 days, newest first:
-// going back to one undoes that restore.
+// going back to one undoes that restore. The JSON keys verified_at and
+// drill_error stay as they are: agents of protocol version 1 send them.
 type DatabaseBackup struct {
 	Database     string     `json:"database"`
 	Kind         string     `json:"kind,omitempty"`
 	Since        *time.Time `json:"since,omitempty"`
 	ReplicatedAt *time.Time `json:"replicated_at,omitempty"`
-	VerifiedAt   *time.Time `json:"verified_at,omitempty"`
+	CheckedAt    *time.Time `json:"verified_at,omitempty"`
 	Copies       []Copy     `json:"copies,omitempty"`
 	Error        string     `json:"error,omitempty"`
-	// DrillError is why the newest daily check failed. Error holds it too
+	// CheckError is why the newest daily check failed. Error holds it too
 	// when nothing else is wrong.
-	DrillError string `json:"drill_error,omitempty"`
+	CheckError string `json:"drill_error,omitempty"`
 	// Note says what a database lacks, such as backups for a Postgres
 	// image WAL-G does not run in.
 	Note string `json:"note,omitempty"`

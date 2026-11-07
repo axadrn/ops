@@ -44,7 +44,7 @@ Every command of `moin`, by area. `moin <command> --help` shows the same on your
 | Flag | Takes |
 | --- | --- |
 | `--chat` | the Telegram chat: an ID like `-1001234567890`, or `@channel` |
-| `--events` | a comma list, default all: `uptime.down`, `uptime.up`, `server.down`, `server.up`, `deploy.failed`, `backup.failed`, `backup.recovered`, `drill.failed`, `drill.recovered`, `disk.full`, `disk.ok`, `update.available` |
+| `--events` | a comma list, default all: `uptime.down`, `uptime.up`, `server.down`, `server.up`, `deploy.failed`, `backup.failed`, `backup.recovered`, `check.failed`, `check.recovered`, `disk.full`, `disk.ok`, `update.available` |
 
 ## Servers
 

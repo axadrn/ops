@@ -97,7 +97,7 @@ func showAlerts(ctx context.Context, api *client.Client, stdout io.Writer) error
 // plane lists them.
 var allAlertEvents = []string{
 	"uptime.down", "uptime.up", "server.down", "server.up", "deploy.failed",
-	"backup.failed", "backup.recovered", "drill.failed", "drill.recovered", "disk.full", "disk.ok",
+	"backup.failed", "backup.recovered", "check.failed", "check.recovered", "disk.full", "disk.ok",
 	"update.available",
 }
 
@@ -114,7 +114,7 @@ func alertEvents(events []string) string {
 func addAlertDestination(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
 	flags := newFlags("alerts add", "alerts add slack|discord|telegram|webhook <name> [--chat <id>] [--events uptime.down,deploy.failed], then the URL or bot token on stdin")
 	chat := flags.String("chat", "", "Telegram: the chat ID, like -1001234567890, or @channel")
-	events := flags.String("events", "", "comma list of uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, drill.failed, drill.recovered, disk.full, disk.ok, update.available; default all")
+	events := flags.String("events", "", "comma list of uptime.down, uptime.up, server.down, server.up, deploy.failed, backup.failed, backup.recovered, check.failed, check.recovered, disk.full, disk.ok, update.available; default all")
 	if err := flags.parse(args); err != nil {
 		return err
 	}

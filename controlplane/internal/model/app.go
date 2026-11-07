@@ -145,11 +145,11 @@ type BackupStatus struct {
 	Database     string     `db:"database"`
 	Since        *time.Time `db:"since"`
 	ReplicatedAt *time.Time `db:"replicated_at"`
-	VerifiedAt   *time.Time `db:"verified_at"`
+	CheckedAt    *time.Time `db:"checked_at"`
 	Error        string     `db:"error"`
 	UpdatedAt    time.Time  `db:"updated_at"`
-	// DrillError is why the newest daily check failed.
-	DrillError string `db:"drill_error"`
+	// CheckError is why the newest daily check failed.
+	CheckError string `db:"check_error"`
 }
 
 // BackupMoment is a moment moin remembers so a restore can go back to
@@ -176,7 +176,7 @@ const (
 // BackupError is why the backups themselves fail, without a failed restore
 // check, which older agents report in Error too.
 func (s BackupStatus) BackupError() string {
-	if s.Error == s.DrillError {
+	if s.Error == s.CheckError {
 		return ""
 	}
 	return s.Error

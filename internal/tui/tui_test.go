@@ -65,9 +65,9 @@ func (m model) withApp(name string, t tab) model {
 	}}
 	m.app.logs = []string{"web  | GET / 200 3ms", "web  | ERROR db timeout", "web  | WARN slow query 812ms", "worker | job done"}
 	m.app.backups = &client.AppBackups{Bucket: "main", Databases: []client.DatabaseBackups{
-		{DatabaseBackup: protocol.DatabaseBackup{Database: "shop.db", Kind: "sqlite", Since: ago2(6 * 24 * time.Hour), ReplicatedAt: ago2(3 * time.Second), VerifiedAt: ago2(2 * time.Hour)},
+		{DatabaseBackup: client.DatabaseBackup{Database: "shop.db", Kind: "sqlite", Since: ago2(6 * 24 * time.Hour), ReplicatedAt: ago2(3 * time.Second), CheckedAt: ago2(2 * time.Hour)},
 			Moments: []client.Moment{{ID: "1h", Label: "1 hour ago", At: now.Add(-time.Hour), Kind: "ago"}, {ID: "before-v43", Label: "Before v43", At: now.Add(-2 * time.Hour), Kind: "deploy"}}},
-		{DatabaseBackup: protocol.DatabaseBackup{Database: "postgres", Kind: "postgres", Error: "the daily check failed: role missing", DrillError: "the daily check failed: role missing"}, Problem: "The daily check could not go back to the newest state."},
+		{DatabaseBackup: client.DatabaseBackup{Database: "postgres", Kind: "postgres", Error: "the daily check failed: role missing", CheckError: "the daily check failed: role missing"}, Problem: "The daily check could not go back to the newest state."},
 	}}
 	m.app.env = map[string]string{"DATABASE_URL": "postgres://x", "STRIPE_KEY": "sk_live_secret", "DEBUG": ""}
 	m.app.domains = []client.DomainCheck{{Domain: "shop.example.com", Canonical: true, Points: true}, {Domain: "www.shop.example.com", Points: false, Advice: "add an A record to 203.0.113.7"}}
