@@ -151,10 +151,10 @@ func (h *AdminHandler) Users(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, NewAdminOverview(overview))
 }
 
-// OldAddress returns what still arrives on the old addresses of the
+// OldDomain returns what still arrives on the old domains of the
 // control plane over the last days.
-func (h *AdminHandler) OldAddress(w http.ResponseWriter, r *http.Request) {
-	report, err := h.admin.OldAddress(ctxkeys.User(r.Context()), ctxkeys.Session(r.Context()))
+func (h *AdminHandler) OldDomain(w http.ResponseWriter, r *http.Request) {
+	report, err := h.admin.OldDomain(ctxkeys.User(r.Context()), ctxkeys.Session(r.Context()))
 	if err != nil {
 		ServiceError(w, err)
 		return

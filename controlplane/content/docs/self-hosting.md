@@ -115,7 +115,7 @@ The files are in the repo, in `controlplane/deploy/`:
 | `UPTIME_CHECKS` | the [uptime checks](/docs/guides/uptime); on in production, off in development |
 | `TUNNEL_TOKEN`, `TRUSTED_PROXY_CIDRS` | a Cloudflare Tunnel in front of the control plane |
 | `SAME_SERVER` | `true` when the control plane runs on the same server as its apps, as the one-server install sets it |
-| `OLD_URLS` | old addresses the control plane still answers on, see [A new address](#a-new-address) |
+| `OLD_URLS` | old domains the control plane still answers on, see [A new domain](#a-new-domain) |
 | `TELEMETRY` | `false` stops the count it sends us, see [What it sends us](#what-it-sends-us) |
 | `UPDATE_CHECK` | `false` stops the daily check for a new version |
 | `ROBOTS_NOINDEX` | asks search engines to stay away; on by default without billing |
@@ -197,9 +197,9 @@ Like your apps' databases, the control plane's SQLite database goes to its bucke
 
 A control plane that starts without a database restores the newest one from the bucket by itself; an empty bucket means a fresh start. So to move or rebuild: prepare a new server with `setup.sh`, put your settings in `/etc/moin-controlplane/` again and run `update.sh`. With a tunnel nothing else changes.
 
-## A new address
+## A new domain
 
-Set `APP_URL` to the new one and put the old one in `OLD_URLS`, like `OLD_URLS=https://old.example.com`. A browser on the old address goes on to the same page on the new one, agents and the CLI move by themselves, and webhooks and API calls there keep working. **Admin**, **Old domain** (or `GET /api/v1/admin/old-address`) shows what still arrives, by day and kind; after 14 quiet days it can go.
+Set `APP_URL` to the new one and put the old one in `OLD_URLS`, like `OLD_URLS=https://old.example.com`. A browser on the old domain goes on to the same page on the new one, agents and the CLI move by themselves, and webhooks and API calls there keep working. **Admin**, **Old domain** (or `GET /api/v1/admin/old-domain`) shows what still arrives, by day and kind; after 14 quiet days it can go.
 
 ## What it sends us
 

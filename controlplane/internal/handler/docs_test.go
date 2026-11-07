@@ -85,7 +85,7 @@ func TestDocsRedirectsWhatIsNoPage(t *testing.T) {
 			t.Errorf("%s goes to %q, want %q", path, location, target)
 		}
 	}
-	// A page that was renamed is gone: no old address leads to the new one.
+	// A page that was renamed is gone: no old path leads to the new one.
 	for _, path := range []string{"/docs/missing", "/docs/introduction"} {
 		if code := serveDocs(t, handler, path).Code; code != http.StatusNotFound {
 			t.Errorf("%s answers %d", path, code)

@@ -4272,23 +4272,23 @@ paths:
         '500':
           $ref: '#/components/responses/Internal'
 
-  /api/v1/admin/old-address:
+  /api/v1/admin/old-domain:
     get:
       tags: [Admin]
-      operationId: getAdminOldAddress
-      summary: Get the traffic on the old addresses
+      operationId: getAdminOldDomain
+      summary: Get the traffic on the old domains
       description: >-
-        What still arrives on the old addresses of the control plane
+        What still arrives on the old domains of the control plane
         (OLD_URLS) over the last 14 days, by day, host and kind: web, form,
         api, agent, download, webhook. After 14 quiet days `quiet` is true
-        and the old address can go.
+        and the old domain can go.
       responses:
         '200':
           description: The traffic.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OldAddress'
+                $ref: '#/components/schemas/OldDomain'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -6873,7 +6873,7 @@ components:
         created_at:
           type: string
           format: date-time
-    OldAddress:
+    OldDomain:
       type: object
       required: [hosts, days, rows, total, quiet, quiet_days]
       properties:
@@ -6912,7 +6912,7 @@ components:
           description: The newest request; missing without one.
         quiet:
           type: boolean
-          description: Nothing arrived for quiet_days days, so the old address can go.
+          description: Nothing arrived for quiet_days days, so the old domain can go.
         quiet_days:
           type: integer
     AdminOverview:

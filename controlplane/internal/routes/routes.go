@@ -71,7 +71,7 @@ func SetupRoutes(app *app.App) http.Handler {
 		securityHeaders,
 		middleware.RequestLogging(app.Cfg.LogHTTP, clientIPs),
 		middleware.Client(clientIPs),
-		middleware.OldAddress(app.OldAddressService.Hosts(), app.Cfg.AppURL, app.OldAddressService.Count),
+		middleware.OldDomain(app.OldDomainService.Hosts(), app.Cfg.AppURL, app.OldDomainService.Count),
 		middleware.CORS(app.Cfg.CORSAllowedOrigins),
 		middleware.CSRFProtection(app.Cfg.IsProduction(), clientIPs),
 		middleware.AuthMiddleware(app.AuthService, app.UserService),
@@ -349,7 +349,7 @@ func adminRoutes(mux *http.ServeMux, app *app.App) {
 		return middleware.RequireAuth(middleware.RequireAdmin(next))
 	}
 	mux.HandleFunc("GET /admin", adminRoute(admin.Overview))
-	mux.HandleFunc("GET /admin/old-address", adminRoute(admin.OldAddress))
+	mux.HandleFunc("GET /admin/old-domain", adminRoute(admin.OldDomain))
 	mux.HandleFunc("GET /admin/activity", adminRoute(admin.Activity))
 	mux.HandleFunc("GET /admin/users/{userID}", adminRoute(admin.User))
 	mux.HandleFunc("POST /admin/users/{userID}/sessions/revoke", adminRoute(admin.RevokeUserSessions))
@@ -362,7 +362,7 @@ func adminRoutes(mux *http.ServeMux, app *app.App) {
 // binaries, the agent's register and session, deploy hooks and the
 // webhooks of GitHub and telemetry.
 func agentRoutes(mux *http.ServeMux, app *app.App, clientIPs middleware.ClientIPResolver) {
-	agent := handler.NewAgentHandler(app.ServerService, app.Cfg.AppURL, clientIPs, app.OldAddressService.Hosts())
+	agent := handler.NewAgentHandler(app.ServerService, app.Cfg.AppURL, clientIPs, app.OldDomainService.Hosts())
 	mux.HandleFunc("GET /install.sh", agent.InstallScript)
 	mux.HandleFunc("GET /cli.sh", agent.CLIScript)
 	mux.Handle("GET /download/", http.StripPrefix("/download/", http.FileServer(http.Dir("downloads"))))

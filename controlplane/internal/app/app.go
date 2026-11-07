@@ -26,7 +26,7 @@ type App struct {
 	Cfg                 *config.Config
 	DB                  *sqlx.DB
 	HistoryDB           *sqlx.DB
-	OldAddressService   *service.OldAddressService
+	OldDomainService    *service.OldDomainService
 	AuthService         *service.AuthService
 	UserService         *service.UserService
 	EmailService        *service.EmailService
@@ -188,8 +188,8 @@ func New(cfg *config.Config) (*App, error) {
 		operators = cfg.AdminEmails
 	}
 	adminService := service.NewAdminService(adminEvents, users, auth, operators)
-	oldAddress := service.NewOldAddressService(repository.NewOldAddressDays(history), cfg.OldURLs)
-	adminService.UseOldAddress(oldAddress)
+	oldDomain := service.NewOldDomainService(repository.NewOldDomainDays(history), cfg.OldURLs)
+	adminService.UseOldDomain(oldDomain)
 	if cfg.Billing {
 		adminService.UsePlans(subscriptions, activity)
 	}
@@ -201,7 +201,7 @@ func New(cfg *config.Config) (*App, error) {
 		FileService:         fileService,
 		SubscriptionService: subscriptionService,
 		AdminService:        adminService,
-		OldAddressService:   oldAddress,
+		OldDomainService:    oldDomain,
 		BetaService:         beta,
 		PaymentService:      paymentProvider,
 		// Only a self-hosted control plane reports; the hosted one counts.

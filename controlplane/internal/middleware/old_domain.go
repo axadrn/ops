@@ -7,17 +7,17 @@ import (
 	"strings"
 )
 
-// OldAddressHeader tells the CLI the control plane's address when a request
+// OldDomainHeader tells the CLI the control plane's address when a request
 // came on an old one; the CLI moves its config there.
-const OldAddressHeader = "X-Control-Plane-URL"
+const OldDomainHeader = "X-Control-Plane-URL"
 
-// OldAddress serves the old addresses of the control plane (OLD_URLS) next
+// OldDomain serves the old domains of the control plane (OLD_URLS) next
 // to APP_URL. It counts every request on them by kind. A browser asking for
 // a page goes on to the same path on APP_URL; everything a machine calls
 // (the API, agents, downloads, install scripts, webhooks) is answered where
 // it is, so nothing breaks before it moves, and API answers name the new
-// address in OldAddressHeader.
-func OldAddress(hosts []string, appURL string, count func(host, kind string)) func(http.Handler) http.Handler {
+// address in OldDomainHeader.
+func OldDomain(hosts []string, appURL string, count func(host, kind string)) func(http.Handler) http.Handler {
 	appURL = strings.TrimRight(appURL, "/")
 	return func(next http.Handler) http.Handler {
 		if len(hosts) == 0 {
@@ -29,13 +29,13 @@ func OldAddress(hosts []string, appURL string, count func(host, kind string)) fu
 				next.ServeHTTP(w, r)
 				return
 			}
-			kind := oldAddressKind(r)
+			kind := oldDomainKind(r)
 			count(host, kind)
 			if kind == "web" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 				http.Redirect(w, r, appURL+r.URL.RequestURI(), http.StatusMovedPermanently)
 				return
 			}
-			w.Header().Set(OldAddressHeader, appURL)
+			w.Header().Set(OldDomainHeader, appURL)
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -49,8 +49,8 @@ func requestHost(r *http.Request) string {
 	return strings.ToLower(host)
 }
 
-// oldAddressKind sorts a request on an old address.
-func oldAddressKind(r *http.Request) string {
+// oldDomainKind sorts a request on an old domain.
+func oldDomainKind(r *http.Request) string {
 	path := r.URL.Path
 	switch {
 	case strings.HasPrefix(path, "/agent/"):

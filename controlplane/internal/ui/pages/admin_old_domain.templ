@@ -9,9 +9,9 @@ import (
 	"github.com/axadrn/moin/controlplane/internal/ui/layouts"
 )
 
-// AdminOldAddress shows what still arrives on the old addresses of the
+// AdminOldDomain shows what still arrives on the old domains of the
 // control plane, so the operator knows when one can go.
-templ AdminOldAddress(report *model.OldAddress) {
+templ AdminOldDomain(report *model.OldDomain) {
 	@layouts.Admin("Old domain · Admin") {
 		@panelPage() {
 			@kit.Header(kit.Back{Label: "Admin", Href: "/admin"}, "Old domain")
@@ -24,9 +24,9 @@ templ AdminOldAddress(report *model.OldAddress) {
 			} else {
 				@kit.List() {
 					@adminFact("Domain", strings.Join(report.Hosts, ", "))
-					@adminFact("Can it go?", oldAddressVerdict(report))
+					@adminFact("Can it go?", oldDomainVerdict(report))
 					@adminFact("Requests", strconv.Itoa(report.Total)+" in "+strconv.Itoa(report.Days)+" days")
-					@adminFact("Last request", oldAddressLast(report))
+					@adminFact("Last request", oldDomainLast(report))
 				}
 				if len(report.Rows) > 0 {
 					@kit.Section("By day", nil) {
@@ -48,16 +48,16 @@ templ AdminOldAddress(report *model.OldAddress) {
 	}
 }
 
-func oldAddressLast(report *model.OldAddress) string {
+func oldDomainLast(report *model.OldDomain) string {
 	if report.LastAt == nil {
 		return "None"
 	}
 	return report.LastAt.UTC().Format("Jan 2, 15:04 UTC")
 }
 
-// oldAddressVerdict is whether the old address can go: after so many quiet
+// oldDomainVerdict is whether the old domain can go: after so many quiet
 // days.
-func oldAddressVerdict(report *model.OldAddress) string {
+func oldDomainVerdict(report *model.OldDomain) string {
 	if report.Quiet {
 		return "Yes"
 	}

@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-// On an old address a browser goes on to the new one; machines are
+// On an old domain a browser goes on to the new one; machines are
 // answered where they are and told the new address; every request counts
 // by kind. The new address passes untouched.
-func TestOldAddress(t *testing.T) {
+func TestOldDomain(t *testing.T) {
 	counted := map[string]int{}
-	handler := OldAddress([]string{"old.example.com"}, "https://moin.example.com/", func(host, kind string) { counted[host+" "+kind]++ })(
+	handler := OldDomain([]string{"old.example.com"}, "https://moin.example.com/", func(host, kind string) { counted[host+" "+kind]++ })(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) }))
 	for _, test := range []struct {
 		method, host, path string
@@ -30,8 +30,8 @@ func TestOldAddress(t *testing.T) {
 		request := httptest.NewRequest(test.method, "http://"+test.host+test.path, nil)
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, request)
-		if recorder.Code != test.status || recorder.Header().Get("Location") != test.location || recorder.Header().Get(OldAddressHeader) != test.header {
-			t.Errorf("%s %s%s = %d %q %q", test.method, test.host, test.path, recorder.Code, recorder.Header().Get("Location"), recorder.Header().Get(OldAddressHeader))
+		if recorder.Code != test.status || recorder.Header().Get("Location") != test.location || recorder.Header().Get(OldDomainHeader) != test.header {
+			t.Errorf("%s %s%s = %d %q %q", test.method, test.host, test.path, recorder.Code, recorder.Header().Get("Location"), recorder.Header().Get(OldDomainHeader))
 		}
 	}
 	want := map[string]int{"old.example.com web": 2, "old.example.com api": 1, "old.example.com agent": 1, "old.example.com download": 1, "old.example.com webhook": 1, "old.example.com form": 1}
@@ -45,10 +45,10 @@ func TestOldAddress(t *testing.T) {
 	}
 }
 
-// Without old addresses the middleware is not there.
-func TestOldAddressOff(t *testing.T) {
+// Without old domains the middleware is not there.
+func TestOldDomainOff(t *testing.T) {
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
-	if handler := OldAddress(nil, "https://moin.example.com", nil)(next); handler == nil {
+	if handler := OldDomain(nil, "https://moin.example.com", nil)(next); handler == nil {
 		t.Fatal("no handler")
 	}
 }

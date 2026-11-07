@@ -201,7 +201,7 @@ func Routes(h Handlers, m Middleware) []Route {
 		{"PATCH /api/v1/apps/{app}/env", m.InWorkspace(h.Apps.UpdateEnv), TokenWrite},
 		{"PUT /api/v1/apps/{app}/env", m.InWorkspace(h.Apps.ReplaceEnv), TokenWrite},
 		{"GET /api/v1/admin/users", hostedOnly(h.Billing, m.RequireOnboarded(m.RequireAdmin(h.Admin.Users))), TokenDenied},
-		{"GET /api/v1/admin/old-address", hostedOnly(h.Billing, m.RequireOnboarded(m.RequireAdmin(h.Admin.OldAddress))), TokenDenied},
+		{"GET /api/v1/admin/old-domain", hostedOnly(h.Billing, m.RequireOnboarded(m.RequireAdmin(h.Admin.OldDomain))), TokenDenied},
 		{"POST /api/v1/admin/users/{userID}/sessions/revoke", hostedOnly(h.Billing, m.RequireOnboarded(m.RequireAdmin(h.Admin.RevokeUserSessions))), TokenDenied},
 	}
 	for index := range routes {

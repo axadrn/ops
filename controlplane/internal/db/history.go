@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS uptime_hours (
     PRIMARY KEY (app_id, domain, hour)
 );
 CREATE INDEX IF NOT EXISTS idx_uptime_hours_hour ON uptime_hours(hour);
-CREATE TABLE IF NOT EXISTS old_address_days (
+CREATE TABLE IF NOT EXISTS old_domain_days (
     day TEXT NOT NULL,
     host TEXT NOT NULL,
     kind TEXT NOT NULL,

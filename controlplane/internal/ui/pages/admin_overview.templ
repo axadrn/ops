@@ -12,7 +12,7 @@ import (
 )
 
 // AdminOverview is Admin, for whoever runs moin: the numbers at a glance,
-// the way to the operator activity and the old address, and the users, each
+// the way to the operator activity and the old domain, and the users, each
 // a row that opens its own page with what an operator can do to it.
 templ AdminOverview(data *model.AdminOverview) {
 	@layouts.Admin("Admin") {
@@ -40,7 +40,7 @@ templ AdminOverview(data *model.AdminOverview) {
 				@kit.Row("/admin/activity") {
 					@kit.RowText("Activity", "")
 				}
-				@kit.Row("/admin/old-address") {
+				@kit.Row("/admin/old-domain") {
 					@kit.RowText("Old domain", "")
 				}
 			}

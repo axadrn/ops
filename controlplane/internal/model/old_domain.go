@@ -2,9 +2,9 @@ package model
 
 import "time"
 
-// OldAddressDay is how many requests of one kind arrived on an old address
+// OldDomainDay is how many requests of one kind arrived on an old domain
 // of the control plane on one day (UTC).
-type OldAddressDay struct {
+type OldDomainDay struct {
 	Day      string    `json:"day"`
 	Host     string    `json:"host"`
 	Kind     string    `json:"kind"`
@@ -12,14 +12,14 @@ type OldAddressDay struct {
 	LastAt   time.Time `json:"last_at"`
 }
 
-// OldAddress is the traffic on the old addresses over the last days: when
-// nothing came for a while, the old address can go.
-type OldAddress struct {
-	// Hosts are the old addresses the control plane still answers on.
+// OldDomain is the traffic on the old domains over the last days: when
+// nothing came for a while, the old domain can go.
+type OldDomain struct {
+	// Hosts are the old domains the control plane still answers on.
 	Hosts []string `json:"hosts"`
 	// Days is how far Rows reaches back.
-	Days int             `json:"days"`
-	Rows []OldAddressDay `json:"rows"`
+	Days int            `json:"days"`
+	Rows []OldDomainDay `json:"rows"`
 	// Total is the sum of Rows; LastAt the newest request, zero without one.
 	Total  int        `json:"total"`
 	LastAt *time.Time `json:"last_at,omitempty"`

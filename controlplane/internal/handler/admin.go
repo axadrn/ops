@@ -36,14 +36,14 @@ func (h *AdminHandler) Overview(w http.ResponseWriter, r *http.Request) {
 	render(w, r, pages.AdminOverview(overview))
 }
 
-// OldAddress shows what still arrives on the old addresses.
-func (h *AdminHandler) OldAddress(w http.ResponseWriter, r *http.Request) {
-	report, err := h.admin.OldAddress(ctxkeys.User(r.Context()), ctxkeys.Session(r.Context()))
+// OldDomain shows what still arrives on the old domains.
+func (h *AdminHandler) OldDomain(w http.ResponseWriter, r *http.Request) {
+	report, err := h.admin.OldDomain(ctxkeys.User(r.Context()), ctxkeys.Session(r.Context()))
 	if err != nil {
 		h.handleError(w, r, err)
 		return
 	}
-	render(w, r, pages.AdminOldAddress(report))
+	render(w, r, pages.AdminOldDomain(report))
 }
 
 // User is one user's page: the facts and what an operator can do.

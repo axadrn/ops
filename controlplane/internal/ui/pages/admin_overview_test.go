@@ -44,7 +44,7 @@ func TestAdminOverviewListsUsersThatOpenTheirPage(t *testing.T) {
 			TotalUsers: 2,
 		},
 	}))
-	for _, want := range []string{"noindex, nofollow", ">Admin</h1>", "target@example.com", `href="/admin/users/target"`, `href="/admin/activity"`, `href="/admin/old-address"`, "Operator", "2 users"} {
+	for _, want := range []string{"noindex, nofollow", ">Admin</h1>", "target@example.com", `href="/admin/users/target"`, `href="/admin/activity"`, `href="/admin/old-domain"`, "Operator", "2 users"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("admin overview missing %q", want)
 		}

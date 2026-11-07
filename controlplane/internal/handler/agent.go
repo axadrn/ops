@@ -32,7 +32,7 @@ type AgentHandler struct {
 	servers   *service.ServerService
 	appURL    string
 	clientIPs middleware.ClientIPResolver
-	// oldHosts are old addresses of the control plane: an agent that
+	// oldHosts are old domains of the control plane: an agent that
 	// dials one is told to move to appURL.
 	oldHosts []string
 }
@@ -194,7 +194,7 @@ func (h *AgentHandler) Session(w http.ResponseWriter, r *http.Request) {
 	disconnect := h.servers.Connect(server, hello, h.clientIPs.ClientIP(r), cancel, send)
 	defer disconnect()
 	slog.Info("agent connected", "server_id", server.ID, "agent_version", hello.AgentVersion)
-	// An agent on an old address moves to the control plane's own. One
+	// An agent on an old domain moves to the control plane's own. One
 	// that does not know the message ignores it and stays.
 	if slices.Contains(h.oldHosts, requestHostname(r)) {
 		if moved, err := protocol.NewMessage(protocol.TypeAgentURL, protocol.AgentURL{URL: h.appURL}); err == nil {
