@@ -20,19 +20,19 @@ import (
 
 // testS3 is the S3 endpoint and bucket of the tests that need one, such as
 // SeaweedFS: MOIN_TEST_S3=http://127.0.0.1:19000 MOIN_TEST_S3_BUCKET=moin-dev.
-func testS3(t *testing.T) (endpoint, bucket string) {
+func testS3(t *testing.T) (endpoint, bucketName string) {
 	t.Helper()
 	endpoint = os.Getenv("MOIN_TEST_S3")
 	if endpoint == "" {
 		t.Skip("set MOIN_TEST_S3 to an S3 endpoint")
 	}
-	bucket = os.Getenv("MOIN_TEST_S3_BUCKET")
-	if bucket == "" {
-		bucket = "moin-dev"
+	bucketName = os.Getenv("MOIN_TEST_S3_BUCKET")
+	if bucketName == "" {
+		bucketName = "moin-dev"
 	}
-	storage := &protocol.BackupStorage{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, AccessKey: "x", SecretKey: "y"}
-	_, _ = s3Client(storage).CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(bucket)})
-	return endpoint, bucket
+	bucket := &protocol.Bucket{Endpoint: endpoint, Region: "us-east-1", Bucket: bucketName, AccessKey: "x", SecretKey: "y"}
+	_, _ = s3Client(bucket).CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
+	return endpoint, bucketName
 }
 
 // sqliteApp makes an app with one SQLite file, as a deploy leaves it.
@@ -90,7 +90,7 @@ func waitRecorded(t *testing.T, e engine, after time.Time) window {
 // the file when its bucket or app ID changes. The full restore with the
 // app stopping and starting is in sqlite_docker_test.go.
 func TestBackups(t *testing.T) {
-	endpoint, bucket := testS3(t)
+	endpoint, bucketName := testS3(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	a := newApps(dir, func(protocol.MessageType, string, any) {})
@@ -106,8 +106,8 @@ func TestBackups(t *testing.T) {
 	if _, err := b.list(ctx, protocol.BackupRequest{App: app}); err == nil {
 		t.Fatal("a list without a bucket worked")
 	}
-	storage := &protocol.BackupStorage{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, Path: "test", Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
-	if err := b.configure(ctx, storage, nil); err != nil {
+	bucket := &protocol.Bucket{Endpoint: endpoint, Region: "us-east-1", Bucket: bucketName, Path: "test", Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
+	if err := b.configure(ctx, bucket, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer b.configure(ctx, nil, nil)
@@ -167,8 +167,8 @@ func TestBackups(t *testing.T) {
 	if !strings.HasPrefix(copied.Key, "test/ws-one/"+app+"/app-one/downloads/"+app+"-data-app.db-") || !strings.HasSuffix(copied.Key, ".db.gz") || copied.Size == 0 {
 		t.Fatalf("download %+v", copied)
 	}
-	client := s3Client(storage)
-	object, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(copied.Key)})
+	client := s3Client(bucket)
+	object, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucketName), Key: aws.String(copied.Key)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,33 +206,33 @@ func TestBackups(t *testing.T) {
 	}
 
 	// A new folder in the bucket starts over and records again.
-	moved := *storage
+	moved := *bucket
 	moved.Path = "test-moved"
 	if err := b.configure(ctx, &moved, nil); err != nil {
 		t.Fatal(err)
 	}
 	db.Exec(`INSERT INTO notes (body) VALUES ('after the move')`)
 	waitRecorded(t, b.engine(app, database), time.Now().Add(-time.Second))
-	if err := b.configure(ctx, storage, nil); err != nil {
+	if err := b.configure(ctx, bucket, nil); err != nil {
 		t.Fatal(err)
 	}
 
 	// The app moves to a bucket of its own: its changes go there.
-	own := *storage
+	own := *bucket
 	own.Path, own.Name = "test-own", "own"
-	if err := b.configure(ctx, storage, map[string]*protocol.BackupStorage{app: &own}); err != nil {
+	if err := b.configure(ctx, bucket, map[string]*protocol.Bucket{app: &own}); err != nil {
 		t.Fatal(err)
 	}
-	if b.watched[file].storage != own {
-		t.Fatalf("the app records to %+v, want its own bucket", b.watched[file].storage)
+	if b.watched[file].bucket != own {
+		t.Fatalf("the app records to %+v, want its own bucket", b.watched[file].bucket)
 	}
 	db.Exec(`INSERT INTO notes (body) VALUES ('own bucket')`)
 	waitRecorded(t, b.engine(app, database), time.Now().Add(-time.Second))
-	list, _ := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String("test-own/ws-one/" + app + "/app-one/data-app.db/litestream/")})
+	list, _ := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String("test-own/ws-one/" + app + "/app-one/data-app.db/litestream/")})
 	if len(list.Contents) == 0 {
 		t.Fatal("nothing in the app's own bucket")
 	}
-	if err := b.configure(ctx, storage, nil); err != nil {
+	if err := b.configure(ctx, bucket, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -242,7 +242,7 @@ func TestBackups(t *testing.T) {
 	b.reconcile()
 	db.Exec(`INSERT INTO notes (body) VALUES ('new app')`)
 	waitRecorded(t, b.engine(app, database), time.Now().Add(-time.Second))
-	list, _ = client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String("test/ws-one/" + app + "/app-two/data-app.db/litestream/")})
+	list, _ = client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String("test/ws-one/" + app + "/app-two/data-app.db/litestream/")})
 	if len(list.Contents) == 0 {
 		t.Fatal("nothing recorded under the new app ID")
 	}
@@ -305,7 +305,7 @@ func TestBucketLayout(t *testing.T) {
 			os.MkdirAll(a.appDir("shop"), 0o700)
 			os.WriteFile(filepath.Join(a.appDir("shop"), "app-id"), []byte("id-"+workspace[:8]), 0o600)
 			b := newBackups(a, nil)
-			b.storage = &protocol.BackupStorage{Bucket: "shared", Path: folder, Workspace: workspace}
+			b.defaultBucket = &protocol.Bucket{Bucket: "shared", Path: folder, Workspace: workspace}
 			prefix, err := b.prefix("shop", "/data/app.db")
 			if err != nil {
 				t.Fatal(err)
@@ -322,11 +322,11 @@ func TestBucketLayout(t *testing.T) {
 			prefixes[workspace+folder] = prefix
 		}
 	}
-	err := newBackups(newApps(t.TempDir(), nil), nil).configure(context.Background(), &protocol.BackupStorage{Bucket: "shared"}, nil)
+	err := newBackups(newApps(t.TempDir(), nil), nil).configure(context.Background(), &protocol.Bucket{Bucket: "shared"}, nil)
 	if err == nil {
 		t.Error("a bucket without a workspace folder was accepted")
 	}
-	err = newBackups(newApps(t.TempDir(), nil), nil).configure(context.Background(), &protocol.BackupStorage{Bucket: "shared", Workspace: "ws"}, map[string]*protocol.BackupStorage{"shop": {Bucket: "own"}})
+	err = newBackups(newApps(t.TempDir(), nil), nil).configure(context.Background(), &protocol.Bucket{Bucket: "shared", Workspace: "ws"}, map[string]*protocol.Bucket{"shop": {Bucket: "own"}})
 	if err == nil {
 		t.Error("an app's bucket without a workspace folder was accepted")
 	}
@@ -341,17 +341,17 @@ func TestAppBucket(t *testing.T) {
 		os.WriteFile(filepath.Join(a.appDir(app), "app-id"), []byte("id-"+app), 0o600)
 	}
 	b := newBackups(a, nil)
-	b.storage = &protocol.BackupStorage{Bucket: "shared", Workspace: "ws", Name: "default"}
-	b.appStorage = map[string]*protocol.BackupStorage{"shop": {Bucket: "client", Path: "moin", Workspace: "ws", Name: "client"}}
-	if b.storageFor("shop").Bucket != "client" || b.storageFor("blog").Bucket != "shared" {
-		t.Fatalf("buckets = %s, %s", b.storageFor("shop").Bucket, b.storageFor("blog").Bucket)
+	b.defaultBucket = &protocol.Bucket{Bucket: "shared", Workspace: "ws", Name: "default"}
+	b.appBuckets = map[string]*protocol.Bucket{"shop": {Bucket: "client", Path: "moin", Workspace: "ws", Name: "client"}}
+	if b.bucketFor("shop").Bucket != "client" || b.bucketFor("blog").Bucket != "shared" {
+		t.Fatalf("buckets = %s, %s", b.bucketFor("shop").Bucket, b.bucketFor("blog").Bucket)
 	}
 	prefix, _ := b.prefix("shop", "/data/app.db")
 	if prefix != "moin/ws/shop/id-shop/data-app.db" {
 		t.Errorf("prefix in the app's own bucket = %s", prefix)
 	}
-	if sameStorage(b.appStorage, nil) || !sameStorage(b.appStorage, map[string]*protocol.BackupStorage{"shop": {Bucket: "client", Path: "moin", Workspace: "ws", Name: "client"}}) {
-		t.Error("sameStorage compares wrong")
+	if sameBuckets(b.appBuckets, nil) || !sameBuckets(b.appBuckets, map[string]*protocol.Bucket{"shop": {Bucket: "client", Path: "moin", Workspace: "ws", Name: "client"}}) {
+		t.Error("sameBuckets compares wrong")
 	}
 }
 
@@ -359,12 +359,12 @@ func TestAppBucket(t *testing.T) {
 // restores after 7 days; the history, newer files and another
 // workspace's files are never touched. Old snapshots/ stay too.
 func TestSweep(t *testing.T) {
-	endpoint, bucket := testS3(t)
+	endpoint, bucketName := testS3(t)
 	ctx := context.Background()
 	folder := fmt.Sprintf("sweep-%d", time.Now().UnixNano())
 	b := newBackups(newApps(t.TempDir(), nil), nil)
-	b.storage = &protocol.BackupStorage{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, Path: folder, Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
-	client := s3Client(b.storage)
+	b.defaultBucket = &protocol.Bucket{Endpoint: endpoint, Region: "us-east-1", Bucket: bucketName, Path: folder, Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
+	client := s3Client(b.defaultBucket)
 	keys := []string{
 		folder + "/ws-one/shop/app-1/uploads/up_old.tar.gz",
 		folder + "/ws-one/gone/app-2/uploads/up_old.tar.gz",
@@ -375,13 +375,13 @@ func TestSweep(t *testing.T) {
 		folder + "/ws-two/shop/app-3/uploads/up_old.tar.gz",
 	}
 	for _, key := range keys {
-		_, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket), Key: aws.String(key), Body: strings.NewReader("x")})
+		_, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucketName), Key: aws.String(key), Body: strings.NewReader("x")})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	exists := func(key string) bool {
-		_, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucketName), Key: aws.String(key)})
 		return err == nil
 	}
 	b.sweepOnce(ctx, time.Now().Add(time.Hour))
@@ -405,14 +405,14 @@ func TestSweep(t *testing.T) {
 		}
 	}
 	for _, key := range keys {
-		client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucketName), Key: aws.String(key)})
 	}
 }
 
 // TestCheckBeforeRecording: a check with nothing in the bucket yet is
 // neither passed nor failed, and asks to try again soon.
 func TestCheckBeforeRecording(t *testing.T) {
-	endpoint, bucket := testS3(t)
+	endpoint, bucketName := testS3(t)
 	reports := make(chan protocol.Backups, 1)
 	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
 	b := newBackups(a, func(_ protocol.MessageType, _ string, data any) {
@@ -421,7 +421,7 @@ func TestCheckBeforeRecording(t *testing.T) {
 		}
 	})
 	sqliteApp(t, a, "fresh", "app-1")
-	b.storage = &protocol.BackupStorage{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, Path: fmt.Sprintf("empty-%d", time.Now().UnixNano()), Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
+	b.defaultBucket = &protocol.Bucket{Endpoint: endpoint, Region: "us-east-1", Bucket: bucketName, Path: fmt.Sprintf("empty-%d", time.Now().UnixNano()), Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
 	if !b.checkAll(context.Background()) {
 		t.Error("a check before the first change does not try again soon")
 	}
@@ -434,14 +434,14 @@ func TestCheckBeforeRecording(t *testing.T) {
 // TestBrokenHistoryFailsTheCheck: a history whose files are damaged fails
 // the daily check loudly.
 func TestBrokenHistoryFailsTheCheck(t *testing.T) {
-	endpoint, bucket := testS3(t)
+	endpoint, bucketName := testS3(t)
 	ctx := context.Background()
 	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
 	b := newBackups(a, func(protocol.MessageType, string, any) {})
 	app := fmt.Sprintf("broken-%d", time.Now().UnixNano())
 	_, db := sqliteApp(t, a, app, "app-1")
-	storage := &protocol.BackupStorage{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, Path: "broken", Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
-	if err := b.configure(ctx, storage, nil); err != nil {
+	bucket := &protocol.Bucket{Endpoint: endpoint, Region: "us-east-1", Bucket: bucketName, Path: "broken", Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
+	if err := b.configure(ctx, bucket, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer b.configure(ctx, nil, nil)
@@ -453,10 +453,10 @@ func TestBrokenHistoryFailsTheCheck(t *testing.T) {
 	}
 	// Every file of the history in the bucket turns to garbage.
 	b.configure(ctx, nil, nil)
-	b.storage = storage
-	client := s3Client(storage)
+	b.defaultBucket = bucket
+	client := s3Client(bucket)
 	prefix := path.Join("broken/ws-one", app, "app-1/data-app.db/litestream") + "/"
-	pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})
+	pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(prefix)})
 	broken := 0
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
@@ -464,7 +464,7 @@ func TestBrokenHistoryFailsTheCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, object := range page.Contents {
-			client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket), Key: object.Key, Body: strings.NewReader("garbage")})
+			client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucketName), Key: object.Key, Body: strings.NewReader("garbage")})
 			broken++
 		}
 	}
@@ -535,7 +535,7 @@ func TestRestoreRefuses(t *testing.T) {
 	a := newApps(t.TempDir(), nil)
 	b := newBackups(a, nil)
 	sqliteApp(t, a, "shop", "app-1")
-	b.storage = &protocol.BackupStorage{Bucket: "x", Workspace: "ws"}
+	b.defaultBucket = &protocol.Bucket{Bucket: "x", Workspace: "ws"}
 	later := time.Now().Add(time.Hour)
 	for _, request := range []protocol.BackupRestore{
 		{App: "shop"},

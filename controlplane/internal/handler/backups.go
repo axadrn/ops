@@ -160,7 +160,7 @@ func (h *AppsHandler) backupsView(r *http.Request, app *model.App, agent bool, d
 	workspace := ctxkeys.Workspace(r.Context())
 	view := pages.BackupsView{App: *app, Now: time.Now()}
 	var err error
-	view.Storage, err = h.apps.AppBucket(app)
+	view.Bucket, err = h.apps.AppBucket(app)
 	if errors.Is(err, service.ErrNoBackups) {
 		return view, nil
 	}

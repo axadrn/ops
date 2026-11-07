@@ -48,7 +48,7 @@ type AddBucketInput struct {
 	Name      string `json:"name" jsonschema:"a name for the bucket in moin: lowercase letters, digits, dashes"`
 	Endpoint  string `json:"endpoint,omitempty" jsonschema:"https:// URL of an S3-compatible store; empty for AWS S3"`
 	Region    string `json:"region,omitempty" jsonschema:"the region; auto for Cloudflare R2, the default"`
-	Bucket    string `json:"bucket" jsonschema:"the bucket's name at the storage provider"`
+	Bucket    string `json:"bucket" jsonschema:"the bucket's name at the bucket provider"`
 	Path      string `json:"path,omitempty" jsonschema:"a folder inside the bucket, only if it holds other files too"`
 	AccessKey string `json:"access_key" jsonschema:"the access key ID"`
 	SecretKey string `json:"secret_key" jsonschema:"the secret key"`
@@ -61,7 +61,7 @@ type EditBucketInput struct {
 	Rename    string `json:"rename,omitempty" jsonschema:"a new name in moin; empty keeps it"`
 	Endpoint  string `json:"endpoint,omitempty" jsonschema:"https:// URL of an S3-compatible store; empty for AWS S3"`
 	Region    string `json:"region,omitempty" jsonschema:"the region; auto for Cloudflare R2"`
-	Bucket    string `json:"bucket" jsonschema:"the bucket's name at the storage provider"`
+	Bucket    string `json:"bucket" jsonschema:"the bucket's name at the bucket provider"`
 	Path      string `json:"path,omitempty" jsonschema:"a folder inside the bucket; empty for none"`
 	AccessKey string `json:"access_key" jsonschema:"the access key ID"`
 	SecretKey string `json:"secret_key,omitempty" jsonschema:"a new secret key; empty keeps the stored one"`

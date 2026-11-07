@@ -49,14 +49,14 @@ func (s *AppService) Upload(ctx context.Context, workspaceID, idOrName string) (
 	if err != nil {
 		return Upload{}, err
 	}
-	storage, err := s.appStorage(app)
+	bucket, err := s.openAppBucket(app)
 	if err != nil {
 		return Upload{}, ErrUploadBucket
 	}
 	id := "up_" + randomToken()
-	request, err := s3.NewPresignClient(bucketClient(*storage)).PresignPutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(storage.Bucket),
-		Key:    aws.String(uploadKey(*storage, app, id)),
+	request, err := s3.NewPresignClient(bucketClient(*bucket)).PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket.Bucket),
+		Key:    aws.String(uploadKey(*bucket, app, id)),
 	}, s3.WithPresignExpires(uploadLinkLifetime))
 	if err != nil {
 		return Upload{}, err
@@ -74,11 +74,11 @@ func (s *AppService) DeployUpload(ctx context.Context, actor Actor, idOrName, up
 	if err != nil {
 		return nil, err
 	}
-	storage, err := s.appStorage(app)
+	bucket, err := s.openAppBucket(app)
 	if err != nil {
 		return nil, ErrUploadBucket
 	}
-	return s.deploySource(ctx, actor, "app.deployed", app, *storage, uploadKey(*storage, app, uploadID), sum)
+	return s.deploySource(ctx, actor, "app.deployed", app, *bucket, uploadKey(*bucket, app, uploadID), sum)
 }
 
 // DeployFiles deploys a source moin writes itself, such as a catalog app's
@@ -89,7 +89,7 @@ func (s *AppService) DeployFiles(ctx context.Context, actor Actor, action, idOrN
 	if err != nil {
 		return nil, err
 	}
-	storage, err := s.appStorage(app)
+	bucket, err := s.openAppBucket(app)
 	if err != nil {
 		return nil, ErrUploadBucket
 	}
@@ -97,13 +97,13 @@ func (s *AppService) DeployFiles(ctx context.Context, actor Actor, action, idOrN
 	if err != nil {
 		return nil, err
 	}
-	key := uploadKey(*storage, app, "up_"+randomToken())
-	_, err = bucketClient(*storage).PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(key), Body: bytes.NewReader(body)})
+	key := uploadKey(*bucket, app, "up_"+randomToken())
+	_, err = bucketClient(*bucket).PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(key), Body: bytes.NewReader(body)})
 	if err != nil {
 		return nil, err
 	}
 	sum := sha256.Sum256(body)
-	return s.deploySource(ctx, actor, action, app, *storage, key, hex.EncodeToString(sum[:]))
+	return s.deploySource(ctx, actor, action, app, *bucket, key, hex.EncodeToString(sum[:]))
 }
 
 // tarball packs files, by their names, into a gzipped tar.
@@ -131,13 +131,13 @@ func tarball(files map[string][]byte, now time.Time) ([]byte, error) {
 
 // deploySource starts a deploy of the source at key in the app's bucket.
 // The agent downloads it, checks sum and deletes it.
-func (s *AppService) deploySource(ctx context.Context, actor Actor, action string, app *model.App, storage protocol.BackupStorage, key, sum string) (*model.Deploy, error) {
-	presign := s3.NewPresignClient(bucketClient(storage))
-	get, err := presign.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(key)}, s3.WithPresignExpires(downloadLinkLifetime))
+func (s *AppService) deploySource(ctx context.Context, actor Actor, action string, app *model.App, bucket protocol.Bucket, key, sum string) (*model.Deploy, error) {
+	presign := s3.NewPresignClient(bucketClient(bucket))
+	get, err := presign.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(key)}, s3.WithPresignExpires(downloadLinkLifetime))
 	if err != nil {
 		return nil, err
 	}
-	remove, err := presign.PresignDeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(key)}, s3.WithPresignExpires(downloadLinkLifetime))
+	remove, err := presign.PresignDeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(key)}, s3.WithPresignExpires(downloadLinkLifetime))
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +150,6 @@ func (s *AppService) deploySource(ctx context.Context, actor Actor, action strin
 // uploadKey is where a source waits for the server, next to the app's
 // backups: <path>/<workspace>/<app>/<app ID>/uploads/<id>.tar.gz. The
 // agent deletes what it never fetched after a day.
-func uploadKey(storage protocol.BackupStorage, app *model.App, id string) string {
-	return strings.TrimLeft(path.Join(storage.Path, storage.Workspace, app.Name, app.ID, "uploads", id+".tar.gz"), "/")
+func uploadKey(bucket protocol.Bucket, app *model.App, id string) string {
+	return strings.TrimLeft(path.Join(bucket.Path, bucket.Workspace, app.Name, app.ID, "uploads", id+".tar.gz"), "/")
 }

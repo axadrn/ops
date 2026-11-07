@@ -86,13 +86,13 @@ func TestUploadsComeFromTheBucketOfBackupsTo(t *testing.T) {
 
 func TestBackupsTo(t *testing.T) {
 	rules := &protocol.Rules{BackupsTo: "s3.eu-central-1.amazonaws.com/acme"}
-	if checkStorage(rules, "rules", &protocol.BackupStorage{Region: "eu-central-1", Bucket: "acme"}) != nil {
+	if checkBucket(rules, "rules", &protocol.Bucket{Region: "eu-central-1", Bucket: "acme"}) != nil {
 		t.Fatal("the allowed AWS bucket is refused")
 	}
-	if checkStorage(rules, "rules", &protocol.BackupStorage{Endpoint: "https://evil.example", Bucket: "acme"}) == nil {
+	if checkBucket(rules, "rules", &protocol.Bucket{Endpoint: "https://evil.example", Bucket: "acme"}) == nil {
 		t.Fatal("another bucket is allowed")
 	}
-	if checkStorage(rules, "rules", nil) != nil {
+	if checkBucket(rules, "rules", nil) != nil {
 		t.Fatal("turning backups off is refused")
 	}
 }

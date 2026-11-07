@@ -15,7 +15,7 @@ var (
 	ErrDuplicateApp     = errors.New("app name already exists")
 	ErrDeployNotFound   = errors.New("deploy not found")
 	ErrRegistryNotFound = errors.New("registry not found")
-	ErrNoBackupStorage  = errors.New("no backup storage")
+	ErrNoBucket         = errors.New("no backup bucket")
 	// ErrGitHubInstallationTaken means the installation is connected to
 	// another workspace.
 	ErrGitHubInstallationTaken = errors.New("github installation belongs to another workspace")

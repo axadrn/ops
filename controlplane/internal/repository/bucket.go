@@ -34,13 +34,13 @@ func (r *Apps) Bucket(workspaceID, name string) (*model.Bucket, error) {
 	return &bucket, err
 }
 
-// DefaultBucket returns ErrNoBackupStorage when the workspace has no
+// DefaultBucket returns ErrNoBucket when the workspace has no
 // bucket.
 func (r *Apps) DefaultBucket(workspaceID string) (*model.Bucket, error) {
 	var bucket model.Bucket
 	err := r.db.Get(&bucket, `SELECT * FROM buckets WHERE workspace_id = $1 AND is_default = 1`, workspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNoBackupStorage
+		return nil, ErrNoBucket
 	}
 	return &bucket, err
 }

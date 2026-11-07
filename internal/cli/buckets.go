@@ -47,7 +47,7 @@ func newBucketFlags(flags *flagSet) bucketFlags {
 	return bucketFlags{
 		endpoint:    flags.String("endpoint", "", "https:// URL of an S3-compatible store; empty for AWS S3"),
 		region:      flags.String("region", "", "region; auto for Cloudflare R2"),
-		bucket:      flags.String("bucket", "", "the bucket's name at your storage provider"),
+		bucket:      flags.String("bucket", "", "the bucket's name at your bucket provider"),
 		folder:      flags.String("path", "", "a folder inside the bucket, only if it holds other files too"),
 		accessKey:   flags.String("access-key", "", "access key ID"),
 		makeDefault: flags.Bool("default", false, "make it the default bucket of the workspace"),

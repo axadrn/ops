@@ -53,10 +53,10 @@ func (s *AppService) AllowOnlyPublicBuckets() { s.publicBucketsOnly = true }
 // checkBucket writes and deletes a small object in the workspace's folder,
 // which needs the same rights as backups. publicOnly refuses addresses that
 // are not on the public internet.
-func checkBucket(ctx context.Context, storage protocol.BackupStorage, publicOnly bool) error {
+func checkBucket(ctx context.Context, bucket protocol.Bucket, publicOnly bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	client := bucketClient(storage)
+	client := bucketClient(bucket)
 	if publicOnly {
 		client = s3.New(client.Options(), func(options *s3.Options) {
 			options.HTTPClient = publicHTTPClient()
@@ -72,12 +72,12 @@ func checkBucket(ctx context.Context, storage protocol.BackupStorage, publicOnly
 			})
 		})
 	}
-	key := strings.TrimLeft(path.Join(storage.Path, storage.Workspace, "."+build.Name+"-check"), "/")
-	_, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(key), Body: bytes.NewReader([]byte("moin"))})
+	key := strings.TrimLeft(path.Join(bucket.Path, bucket.Workspace, "."+build.Name+"-check"), "/")
+	_, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(key), Body: bytes.NewReader([]byte("moin"))})
 	if err != nil {
 		return err
 	}
-	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(key)})
+	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(key)})
 	return err
 }
 
@@ -114,20 +114,20 @@ func refusePrivate(network, address string, _ syscall.RawConn) error {
 	return nil
 }
 
-func bucketClient(storage protocol.BackupStorage) *s3.Client {
-	endpoint := storage.Endpoint
+func bucketClient(bucket protocol.Bucket) *s3.Client {
+	endpoint := bucket.Endpoint
 	if endpoint == "" {
-		region := storage.Region
+		region := bucket.Region
 		if region == "" || region == "auto" {
 			region = "us-east-1"
 		}
 		endpoint = "https://s3." + region + ".amazonaws.com"
 	}
 	return s3.New(s3.Options{
-		Region:       storage.Region,
-		Credentials:  credentials.NewStaticCredentialsProvider(storage.AccessKey, storage.SecretKey, ""),
+		Region:       bucket.Region,
+		Credentials:  credentials.NewStaticCredentialsProvider(bucket.AccessKey, bucket.SecretKey, ""),
 		BaseEndpoint: aws.String(endpoint),
-		UsePathStyle: storage.Endpoint != "",
+		UsePathStyle: bucket.Endpoint != "",
 	})
 }
 
@@ -139,11 +139,11 @@ func (s *AppService) backupConfig(workspaceID, serverID string) protocol.BackupC
 	if err != nil {
 		return protocol.BackupConfig{}
 	}
-	storage, err := s.openBucket(bucket)
+	open, err := s.openBucket(bucket)
 	if err != nil {
 		return protocol.BackupConfig{}
 	}
-	config := protocol.BackupConfig{Storage: storage}
+	config := protocol.BackupConfig{Bucket: open}
 	apps, err := s.apps.ListByWorkspaceID(workspaceID)
 	if err != nil {
 		slog.Error("list apps for backups failed", "workspace_id", workspaceID, "error", err)
@@ -153,14 +153,14 @@ func (s *AppService) backupConfig(workspaceID, serverID string) protocol.BackupC
 		if app.ServerID != serverID || app.BucketID == nil || *app.BucketID == bucket.ID {
 			continue
 		}
-		own, err := s.appStorage(&app)
+		own, err := s.openAppBucket(&app)
 		if err != nil {
 			continue
 		}
-		if config.AppStorage == nil {
-			config.AppStorage = map[string]*protocol.BackupStorage{}
+		if config.AppBuckets == nil {
+			config.AppBuckets = map[string]*protocol.Bucket{}
 		}
-		config.AppStorage[app.Name] = own
+		config.AppBuckets[app.Name] = own
 	}
 	return config
 }
@@ -648,13 +648,13 @@ func (s *AppService) DownloadOf(ctx context.Context, workspaceID, idOrName, id s
 	if index < 0 {
 		return nil, ErrDownloadNotFound
 	}
-	storage, err := s.openBucket(&buckets[index])
+	bucket, err := s.openBucket(&buckets[index])
 	if err != nil {
 		return nil, err
 	}
 	name := path.Base(answer.key)
-	link, err := s3.NewPresignClient(bucketClient(*storage)).PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket:                     aws.String(storage.Bucket),
+	link, err := s3.NewPresignClient(bucketClient(*bucket)).PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket:                     aws.String(bucket.Bucket),
 		Key:                        aws.String(answer.key),
 		ResponseContentDisposition: aws.String(`attachment; filename="` + name + `"`),
 	}, s3.WithPresignExpires(downloadLinkLife))

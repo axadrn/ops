@@ -74,7 +74,7 @@ func TestBuckets(t *testing.T) {
 		t.Fatalf("blog's bucket = %+v, %v", current, err)
 	}
 	config := apps.backupConfig(owner.WorkspaceID, server.ID)
-	if config.Storage == nil || config.Storage.Bucket != "owner" || config.Storage.SecretKey != "secret" || len(config.AppStorage) != 0 {
+	if config.Bucket == nil || config.Bucket.Bucket != "owner" || config.Bucket.SecretKey != "secret" || len(config.AppBuckets) != 0 {
 		t.Fatalf("config with one bucket = %+v", config)
 	}
 
@@ -95,19 +95,19 @@ func TestBuckets(t *testing.T) {
 	}
 
 	// blog moves: uploads and backups go to client-a, shop stays on the
-	// default, and the agent still gets the default as Storage.
+	// default, and the agent still gets the default as Bucket.
 	moved, err := apps.SetAppBucket(owner, "blog", "client-a")
 	if err != nil || moved.BucketName != "client-a" {
 		t.Fatalf("move blog = %+v, %v", moved, err)
 	}
 	config = apps.backupConfig(owner.WorkspaceID, server.ID)
-	if config.Storage == nil || config.Storage.Bucket != "owner" {
-		t.Fatalf("the default for old agents = %+v", config.Storage)
+	if config.Bucket == nil || config.Bucket.Bucket != "owner" {
+		t.Fatalf("the default for old agents = %+v", config.Bucket)
 	}
-	if own := config.AppStorage["blog"]; own == nil || own.Bucket != "client" || own.SecretKey != "secret-a" || own.Workspace != owner.WorkspaceID || own.Name != "client-a" {
-		t.Fatalf("blog's own bucket = %+v", config.AppStorage)
+	if own := config.AppBuckets["blog"]; own == nil || own.Bucket != "client" || own.SecretKey != "secret-a" || own.Workspace != owner.WorkspaceID || own.Name != "client-a" {
+		t.Fatalf("blog's own bucket = %+v", config.AppBuckets)
 	}
-	if _, ok := config.AppStorage["shop"]; ok {
+	if _, ok := config.AppBuckets["shop"]; ok {
 		t.Fatal("shop got a bucket of its own")
 	}
 	upload, err := apps.Upload(ctx, owner.WorkspaceID, "blog")

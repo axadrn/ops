@@ -225,33 +225,33 @@ func (a *apps) pgDataOf(ctx context.Context, container string) (pgData, error) {
 }
 
 // walgPrefix is the folder of a database's WAL-G backups in its bucket.
-func (b *backups) walgPrefix(app string, database protocol.Database) (*protocol.BackupStorage, string, error) {
+func (b *backups) walgPrefix(app string, database protocol.Database) (*protocol.Bucket, string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	storage := b.storageFor(app)
-	if storage == nil {
+	bucket := b.bucketFor(app)
+	if bucket == nil {
 		return nil, "", errors.New("backups are not set up")
 	}
 	prefix, err := b.prefix(app, database.Path)
 	if err != nil {
 		return nil, "", err
 	}
-	copied := *storage
+	copied := *bucket
 	return &copied, prefix + "/walg", nil
 }
 
 // walgEnv is the environment WAL-G reads, as an env file only root may
 // read: the keys never show in ps. remove deletes the file.
-func walgEnv(storage *protocol.BackupStorage, prefix string, target pgTarget) (file string, remove func(), err error) {
-	region := storage.Region
+func walgEnv(bucket *protocol.Bucket, prefix string, target pgTarget) (file string, remove func(), err error) {
+	region := bucket.Region
 	if region == "" {
 		region = "auto"
 	}
 	lines := []string{
-		"AWS_ACCESS_KEY_ID=" + storage.AccessKey,
-		"AWS_SECRET_ACCESS_KEY=" + storage.SecretKey,
+		"AWS_ACCESS_KEY_ID=" + bucket.AccessKey,
+		"AWS_SECRET_ACCESS_KEY=" + bucket.SecretKey,
 		"AWS_REGION=" + region,
-		"WALG_S3_PREFIX=s3://" + storage.Bucket + "/" + prefix,
+		"WALG_S3_PREFIX=s3://" + bucket.Bucket + "/" + prefix,
 		"WALG_COMPRESSION_METHOD=lz4",
 		"WALG_SLOTNAME=" + walgSlot,
 		"PGHOST=127.0.0.1",
@@ -264,8 +264,8 @@ func walgEnv(storage *protocol.BackupStorage, prefix string, target pgTarget) (f
 		"PGDATA=/tmp/" + tempName("walg"),
 		"SSL_CERT_FILE=/etc/ssl/certs/" + tempName("ca.crt"),
 	}
-	if storage.Endpoint != "" {
-		lines = append(lines, "AWS_ENDPOINT="+storage.Endpoint, "AWS_S3_FORCE_PATH_STYLE=true")
+	if bucket.Endpoint != "" {
+		lines = append(lines, "AWS_ENDPOINT="+bucket.Endpoint, "AWS_S3_FORCE_PATH_STYLE=true")
 	}
 	for _, line := range lines {
 		if strings.ContainsAny(line, "\n\r") {
@@ -302,8 +302,8 @@ func companionName(app, service string) string { return ourName + "-walg-" + app
 
 // walgTarget is where a companion sends to: the bucket, folder and keys,
 // hashed, so a change of bucket starts a new companion.
-func walgTarget(storage *protocol.BackupStorage, prefix, container string) string {
-	sum := sha256.Sum256([]byte(storage.Endpoint + "|" + storage.Bucket + "|" + prefix + "|" + storage.AccessKey + "|" + storage.SecretKey + "|" + container))
+func walgTarget(bucket *protocol.Bucket, prefix, container string) string {
+	sum := sha256.Sum256([]byte(bucket.Endpoint + "|" + bucket.Bucket + "|" + prefix + "|" + bucket.AccessKey + "|" + bucket.SecretKey + "|" + container))
 	return hex.EncodeToString(sum[:8])
 }
 
@@ -317,12 +317,12 @@ func (b *backups) walgEnsure(ctx context.Context, app string, database protocol.
 	if err != nil {
 		return err
 	}
-	storage, prefix, err := b.walgPrefix(app, database)
+	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return err
 	}
 	name := companionName(app, database.Service)
-	want := walgTarget(storage, prefix, target.container)
+	want := walgTarget(bucket, prefix, target.container)
 	running, _ := b.apps.output(ctx, "docker", "inspect", "-f", `{{.State.Running}} {{index .Config.Labels "`+labelWalgTarget+`"}}`, name)
 	if strings.TrimSpace(running) == "true "+want {
 		return nil
@@ -358,7 +358,7 @@ func (b *backups) walgEnsure(ctx context.Context, app string, database protocol.
 	if err != nil {
 		return err
 	}
-	envFile, remove, err := walgEnv(storage, prefix, target)
+	envFile, remove, err := walgEnv(bucket, prefix, target)
 	if err != nil {
 		return err
 	}
@@ -533,14 +533,14 @@ type walgBackup struct {
 // walgBaseBackups lists the finished base backups of a database, oldest
 // first, from the stop sentinels WAL-G writes when one is done.
 func (b *backups) walgBaseBackups(ctx context.Context, app string, database protocol.Database) ([]walgBackup, error) {
-	storage, prefix, err := b.walgPrefix(app, database)
+	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return nil, err
 	}
-	client := s3Client(storage)
+	client := s3Client(bucket)
 	folder := prefix + "/basebackups_005/"
 	found := []walgBackup{}
-	pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(storage.Bucket), Prefix: aws.String(folder), Delimiter: aws.String("/")})
+	pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucket.Bucket), Prefix: aws.String(folder), Delimiter: aws.String("/")})
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {
@@ -578,11 +578,11 @@ func (b *backups) walgWindow(ctx context.Context, app string, database protocol.
 	}
 	since = backups[0].at
 	until = backups[len(backups)-1].at
-	storage, prefix, err := b.walgPrefix(app, database)
+	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return since, until, err
 	}
-	pages := s3.NewListObjectsV2Paginator(s3Client(storage), &s3.ListObjectsV2Input{Bucket: aws.String(storage.Bucket), Prefix: aws.String(prefix + "/wal_005/")})
+	pages := s3.NewListObjectsV2Paginator(s3Client(bucket), &s3.ListObjectsV2Input{Bucket: aws.String(bucket.Bucket), Prefix: aws.String(prefix + "/wal_005/")})
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {
@@ -675,12 +675,12 @@ func (b *backups) walgStuck(ctx context.Context, app string, database protocol.D
 
 // walgObjects counts what is under a database's WAL-G folder, for tests.
 func (b *backups) walgObjects(ctx context.Context, app string, database protocol.Database, folder string) (int, error) {
-	storage, prefix, err := b.walgPrefix(app, database)
+	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return 0, err
 	}
 	count := 0
-	pages := s3.NewListObjectsV2Paginator(s3Client(storage), &s3.ListObjectsV2Input{Bucket: aws.String(storage.Bucket), Prefix: aws.String(path.Join(prefix, folder) + "/")})
+	pages := s3.NewListObjectsV2Paginator(s3Client(bucket), &s3.ListObjectsV2Input{Bucket: aws.String(bucket.Bucket), Prefix: aws.String(path.Join(prefix, folder) + "/")})
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {

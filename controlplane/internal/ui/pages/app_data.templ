@@ -113,7 +113,7 @@ templ dataListPage(view DataView) {
 // that its backup fails and why.
 templ databaseBackupValue(view DataView, database string) {
 	{{ backup, known := backupStatusOf(view.Status, database) }}
-	if view.Backups.Storage == nil {
+	if view.Backups.Bucket == nil {
 		<span class="shrink-0 text-sm text-muted-foreground">No backups</span>
 	} else if known && backup.BackupError() != "" {
 		<span class="flex shrink-0 items-center gap-1.5 text-sm text-failed" title={ service.BackupProblem(backup.BackupError()) }>

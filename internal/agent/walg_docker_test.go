@@ -79,10 +79,10 @@ func TestPostgresGoBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	storage := &protocol.BackupStorage{Endpoint: "http://" + strings.TrimSpace(string(gateway)) + ":19000", Region: "us-east-1", Bucket: "moin-test", Workspace: "ws1", AccessKey: "opstest", SecretKey: "opstestsecret", Name: "test"}
-	client := s3Client(storage)
+	bucket := &protocol.Bucket{Endpoint: "http://" + strings.TrimSpace(string(gateway)) + ":19000", Region: "us-east-1", Bucket: "moin-test", Workspace: "ws1", AccessKey: "opstest", SecretKey: "opstestsecret", Name: "test"}
+	client := s3Client(bucket)
 	for deadline := time.Now().Add(time.Minute); ; {
-		_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(storage.Bucket)})
+		_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket.Bucket)})
 		if err == nil || strings.Contains(err.Error(), "BucketAlreadyOwnedByYou") {
 			break
 		}
@@ -91,7 +91,7 @@ func TestPostgresGoBack(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
-	b.storage = storage
+	b.defaultBucket = bucket
 	e := b.engine(app, database)
 
 	var target pgTarget
@@ -230,7 +230,7 @@ func TestPostgresGoBack(t *testing.T) {
 		_, prefix, _ := b.walgPrefix(app, database)
 		sentinels := ""
 		for _, base := range bases {
-			object, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(prefix + "/basebackups_005/" + base.name + "_backup_stop_sentinel.json")})
+			object, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(prefix + "/basebackups_005/" + base.name + "_backup_stop_sentinel.json")})
 			if err == nil {
 				body := new(strings.Builder)
 				buf := make([]byte, 4096)
@@ -250,7 +250,7 @@ func TestPostgresGoBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	object, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(copied.Key)})
+	object, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(copied.Key)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestPostgresGoBack(t *testing.T) {
 	// files turn to garbage.
 	newest := basesAfter[len(basesAfter)-1].name
 	_, prefix, _ := b.walgPrefix(app, database)
-	pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(storage.Bucket), Prefix: aws.String(prefix + "/basebackups_005/" + newest + "/")})
+	pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucket.Bucket), Prefix: aws.String(prefix + "/basebackups_005/" + newest + "/")})
 	broken := 0
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
@@ -322,7 +322,7 @@ func TestPostgresGoBack(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, object := range page.Contents {
-			client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(storage.Bucket), Key: object.Key, Body: strings.NewReader("garbage")})
+			client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket.Bucket), Key: object.Key, Body: strings.NewReader("garbage")})
 			broken++
 		}
 	}
@@ -337,7 +337,7 @@ func TestPostgresGoBack(t *testing.T) {
 
 	// Without a bucket the companion goes and its slot with it, and no
 	// restore or check volume is left.
-	b.storage = nil
+	b.defaultBucket = nil
 	b.recordAll(ctx)
 	if out, _ := exec.Command("docker", "ps", "-aq", "--filter", "label=moin.walg").Output(); strings.TrimSpace(string(out)) != "" {
 		t.Errorf("companion left: %s", out)

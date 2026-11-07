@@ -137,7 +137,7 @@ func (s *AppService) Bucket(workspaceID, name string) (*Bucket, error) {
 // DefaultBucket returns the workspace's default bucket, or ErrNoBackups.
 func (s *AppService) DefaultBucket(workspaceID string) (*Bucket, error) {
 	bucket, err := s.apps.DefaultBucket(workspaceID)
-	if errors.Is(err, repository.ErrNoBackupStorage) {
+	if errors.Is(err, repository.ErrNoBucket) {
 		return nil, ErrNoBackups
 	}
 	if err != nil {
@@ -171,7 +171,7 @@ func (s *AppService) appBucket(app *model.App) (*model.Bucket, error) {
 		}
 	}
 	bucket, err := s.apps.DefaultBucket(app.WorkspaceID)
-	if errors.Is(err, repository.ErrNoBackupStorage) {
+	if errors.Is(err, repository.ErrNoBucket) {
 		return nil, ErrNoBackups
 	}
 	return bucket, err
@@ -194,32 +194,32 @@ func (s *AppService) OlderBuckets(app *model.App) ([]Bucket, error) {
 // AddBucket checks that moin can write to a new bucket and stores it. The
 // first bucket of a workspace is its default.
 func (s *AppService) AddBucket(ctx context.Context, actor Actor, input BucketInput) (*Bucket, error) {
-	storage, err := cleanBucket(actor.WorkspaceID, input)
+	clean, err := cleanBucket(actor.WorkspaceID, input)
 	if err != nil {
 		return nil, err
 	}
-	if storage.SecretKey == "" {
+	if clean.SecretKey == "" {
 		return nil, ErrBackupBucket
 	}
-	if err := s.checkBucket(ctx, actor, storage); err != nil {
+	if err := s.checkBucket(ctx, actor, clean); err != nil {
 		return nil, err
 	}
 	_, err = s.apps.DefaultBucket(actor.WorkspaceID)
-	first := errors.Is(err, repository.ErrNoBackupStorage)
+	first := errors.Is(err, repository.ErrNoBucket)
 	if err != nil && !first {
 		return nil, err
 	}
 	bucket := model.Bucket{
 		ID:          uuid.New().String(),
 		WorkspaceID: actor.WorkspaceID,
-		Name:        storage.Name,
+		Name:        clean.Name,
 		IsDefault:   input.Default || first,
-		Endpoint:    storage.Endpoint,
-		Region:      storage.Region,
-		Bucket:      storage.Bucket,
-		Path:        storage.Path,
-		AccessKey:   storage.AccessKey,
-		SecretKey:   s.box.Seal(storage.SecretKey, actor.WorkspaceID+"/backups"),
+		Endpoint:    clean.Endpoint,
+		Region:      clean.Region,
+		Bucket:      clean.Bucket,
+		Path:        clean.Path,
+		AccessKey:   clean.AccessKey,
+		SecretKey:   s.box.Seal(clean.SecretKey, actor.WorkspaceID+"/backups"),
 		CreatedAt:   s.now().UTC(),
 	}
 	err = s.apps.CreateBucket(bucket)
@@ -246,29 +246,29 @@ func (s *AppService) EditBucket(ctx context.Context, actor Actor, name string, i
 	if strings.TrimSpace(input.Name) == "" {
 		input.Name = stored.Name
 	}
-	storage, err := cleanBucket(actor.WorkspaceID, input)
+	clean, err := cleanBucket(actor.WorkspaceID, input)
 	if err != nil {
 		return nil, err
 	}
 	sealed := stored.SecretKey
-	if storage.SecretKey == "" {
-		storage.SecretKey, err = s.box.Open(stored.SecretKey, actor.WorkspaceID+"/backups")
+	if clean.SecretKey == "" {
+		clean.SecretKey, err = s.box.Open(stored.SecretKey, actor.WorkspaceID+"/backups")
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		sealed = s.box.Seal(storage.SecretKey, actor.WorkspaceID+"/backups")
+		sealed = s.box.Seal(clean.SecretKey, actor.WorkspaceID+"/backups")
 	}
-	moved := storage.Endpoint != stored.Endpoint || storage.Region != stored.Region || storage.Bucket != stored.Bucket ||
-		storage.Path != stored.Path || storage.AccessKey != stored.AccessKey || sealed != stored.SecretKey
+	moved := clean.Endpoint != stored.Endpoint || clean.Region != stored.Region || clean.Bucket != stored.Bucket ||
+		clean.Path != stored.Path || clean.AccessKey != stored.AccessKey || sealed != stored.SecretKey
 	if moved {
-		if err := s.checkBucket(ctx, actor, storage); err != nil {
+		if err := s.checkBucket(ctx, actor, clean); err != nil {
 			return nil, err
 		}
 	}
 	bucket := *stored
 	bucket.Name, bucket.Endpoint, bucket.Region, bucket.Bucket, bucket.Path, bucket.AccessKey, bucket.SecretKey =
-		storage.Name, storage.Endpoint, storage.Region, storage.Bucket, storage.Path, storage.AccessKey, sealed
+		clean.Name, clean.Endpoint, clean.Region, clean.Bucket, clean.Path, clean.AccessKey, sealed
 	becameDefault := input.Default && !stored.IsDefault
 	bucket.IsDefault = stored.IsDefault || input.Default
 	if !moved && !becameDefault && bucket.Name == stored.Name {
@@ -343,7 +343,7 @@ func (s *AppService) SetAppBucket(actor Actor, idOrName, name string) (*model.Ap
 		}
 		to = &bucket.ID
 	} else if _, err := s.apps.DefaultBucket(actor.WorkspaceID); err != nil {
-		if errors.Is(err, repository.ErrNoBackupStorage) {
+		if errors.Is(err, repository.ErrNoBucket) {
 			return nil, ErrNoBackups
 		}
 		return nil, err
@@ -368,8 +368,8 @@ func (s *AppService) SetAppBucket(actor Actor, idOrName, name string) (*model.Ap
 // cleanBucket trims what people typed and checks the name, the endpoint
 // and the required fields. The secret key may be empty: AddBucket needs
 // it, EditBucket keeps the stored one.
-func cleanBucket(workspaceID string, input BucketInput) (protocol.BackupStorage, error) {
-	storage := protocol.BackupStorage{
+func cleanBucket(workspaceID string, input BucketInput) (protocol.Bucket, error) {
+	bucket := protocol.Bucket{
 		Name:      strings.TrimSpace(input.Name),
 		Endpoint:  strings.TrimRight(strings.TrimSpace(input.Endpoint), "/"),
 		Region:    strings.TrimSpace(input.Region),
@@ -379,28 +379,28 @@ func cleanBucket(workspaceID string, input BucketInput) (protocol.BackupStorage,
 		AccessKey: strings.TrimSpace(input.AccessKey),
 		SecretKey: strings.TrimSpace(input.SecretKey),
 	}
-	if !protocol.ValidAppName(storage.Name) {
-		return storage, ErrBucketName
+	if !protocol.ValidAppName(bucket.Name) {
+		return bucket, ErrBucketName
 	}
-	if storage.Endpoint != "" {
-		parsed, err := url.Parse(storage.Endpoint)
+	if bucket.Endpoint != "" {
+		parsed, err := url.Parse(bucket.Endpoint)
 		local := parsed != nil && (parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1")
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && !(parsed.Scheme == "http" && local)) {
-			return storage, ErrBackupEndpoint
+			return bucket, ErrBackupEndpoint
 		}
 	}
-	if storage.Bucket == "" || storage.AccessKey == "" {
-		return storage, ErrBackupBucket
+	if bucket.Bucket == "" || bucket.AccessKey == "" {
+		return bucket, ErrBackupBucket
 	}
-	if storage.Region == "" {
-		storage.Region = "auto"
+	if bucket.Region == "" {
+		bucket.Region = "auto"
 	}
-	return storage, nil
+	return bucket, nil
 }
 
 // checkBucket writes and deletes a test file with the keys.
-func (s *AppService) checkBucket(ctx context.Context, actor Actor, storage protocol.BackupStorage) error {
-	err := checkBucket(ctx, storage, s.publicBucketsOnly)
+func (s *AppService) checkBucket(ctx context.Context, actor Actor, bucket protocol.Bucket) error {
+	err := checkBucket(ctx, bucket, s.publicBucketsOnly)
 	if errors.Is(err, ErrBucketPrivate) {
 		return ErrBucketPrivate
 	}
@@ -412,13 +412,13 @@ func (s *AppService) checkBucket(ctx context.Context, actor Actor, storage proto
 }
 
 // openBucket is a bucket as the agent needs it, with its secret key.
-func (s *AppService) openBucket(bucket *model.Bucket) (*protocol.BackupStorage, error) {
+func (s *AppService) openBucket(bucket *model.Bucket) (*protocol.Bucket, error) {
 	secretKey, err := s.box.Open(bucket.SecretKey, bucket.WorkspaceID+"/backups")
 	if err != nil {
 		slog.Error("open backup secret failed", "workspace_id", bucket.WorkspaceID, "bucket", bucket.Name, "error", err)
 		return nil, err
 	}
-	return &protocol.BackupStorage{
+	return &protocol.Bucket{
 		Endpoint:  bucket.Endpoint,
 		Region:    bucket.Region,
 		Bucket:    bucket.Bucket,
@@ -430,8 +430,8 @@ func (s *AppService) openBucket(bucket *model.Bucket) (*protocol.BackupStorage, 
 	}, nil
 }
 
-// appStorage is the bucket of an app with its secret key.
-func (s *AppService) appStorage(app *model.App) (*protocol.BackupStorage, error) {
+// openAppBucket is the bucket of an app with its secret key.
+func (s *AppService) openAppBucket(app *model.App) (*protocol.Bucket, error) {
 	bucket, err := s.appBucket(app)
 	if err != nil {
 		return nil, err

@@ -40,7 +40,7 @@ func TestBackupsPickTheBucket(t *testing.T) {
 	current := service.Bucket{Name: "client-a", Bucket: "client", Folder: "workspace-1/"}
 	view := BackupsView{
 		App:     model.App{ID: "app-1", Name: "shop", BucketName: "client-a"},
-		Storage: &current,
+		Bucket:  &current,
 		Buckets: []service.Bucket{{Name: "default", Default: true}, current},
 		Older:   []service.Bucket{{Name: "default"}},
 		Now:     now,

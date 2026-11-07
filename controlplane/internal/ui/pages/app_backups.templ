@@ -18,7 +18,7 @@ import (
 // newest copy to download of the open database.
 type BackupsView struct {
 	App       model.App
-	Storage   *service.Bucket
+	Bucket    *service.Bucket
 	Buckets   []service.Bucket
 	Older     []service.Bucket
 	Databases []service.DatabaseBackups
@@ -44,17 +44,17 @@ templ BackupSettings(view BackupsView) {
 	<div id="data-backups">
 		@kit.Section("Backups", nil) {
 			@kit.List() {
-				if view.Storage == nil {
+				if view.Bucket == nil {
 					@kit.Row(ctxkeys.AppBasePath(ctx) + "/bucket") {
 						<span class="flex-1 font-medium" data-add-bucket>Add your bucket</span>
 					}
 				} else {
 					@kit.Row(ctxkeys.AppBasePath(ctx) + "/bucket") {
 						<span class="shrink-0 font-medium">Bucket</span>
-						<span class="min-w-0 flex-1 truncate text-right text-sm text-muted-foreground" data-bucket={ view.Storage.Name }>{ view.Storage.Name }</span>
+						<span class="min-w-0 flex-1 truncate text-right text-sm text-muted-foreground" data-bucket={ view.Bucket.Name }>{ view.Bucket.Name }</span>
 					}
 					@kit.RowFact("Folder", "") {
-						<span class="font-mono" data-bucket-folder>{ view.Storage.AppFolder(&view.App) }</span>
+						<span class="font-mono" data-bucket-folder>{ view.Bucket.AppFolder(&view.App) }</span>
 					}
 					if len(view.Older) > 0 {
 						@kit.RowFact("Left", "") {
@@ -83,7 +83,7 @@ templ AppBucketForm(view BackupsView) {
 		hx-select="#data-backups"
 		hx-swap="outerHTML"
 		hx-disable="find button[type='submit']"
-		hx-confirm={ "Move the uploads and backups of " + view.App.Name + " to this bucket? Its history starts again there; what is in " + view.Storage.Name + " stays." }
+		hx-confirm={ "Move the uploads and backups of " + view.App.Name + " to this bucket? Its history starts again there; what is in " + view.Bucket.Name + " stays." }
 		data-confirm-action="Move"
 	>
 		@kit.CSRF()
@@ -127,7 +127,7 @@ templ DatabaseBackups(view BackupsView, database string) {
 	{{ appPath := ctxkeys.AppBasePath(ctx) + "/apps/" + view.App.Name }}
 	{{ backup, known := view.backupOf(database) }}
 	<div id="db-backups" class="group/backups flex flex-col gap-6" data-database-backup={ database }>
-		if view.Storage == nil {
+		if view.Bucket == nil {
 			@kit.Section("Backups", nil) {
 				@kit.List() {
 					@kit.Row(ctxkeys.AppBasePath(ctx) + "/bucket") {

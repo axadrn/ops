@@ -129,7 +129,7 @@ templ bucketAdd(first bool) {
 // bucketForm adds a bucket or changes one. The IDs of its fields start
 // with prefix, so every form on the page has its own.
 templ bucketForm(action, prefix string, bucket service.Bucket, adding bool) {
-	<form class="flex flex-col gap-4" hx-post={ action } hx-target="#bucket" hx-select="#bucket" hx-swap="outerHTML" hx-disable="find button[type='submit']" data-storage-form>
+	<form class="flex flex-col gap-4" hx-post={ action } hx-target="#bucket" hx-select="#bucket" hx-swap="outerHTML" hx-disable="find button[type='submit']" data-bucket-form>
 		@kit.CSRF()
 		<div class="grid items-start gap-4 sm:grid-cols-2">
 			@bucketField(prefix, "name", "Name", bucket.Name, "like client-a", "Your name for it in moin", "text", false)

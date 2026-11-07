@@ -173,20 +173,20 @@ func inBucket(link *url.URL, hostBucket string) bool {
 	return link.Host == bucket+"."+host
 }
 
-// checkStorage allows a bucket the rules allow.
-func checkStorage(rules *protocol.Rules, file string, storage *protocol.BackupStorage) error {
-	if rules == nil || rules.BackupsTo == "" || storage == nil {
+// checkBucket allows a bucket the rules allow.
+func checkBucket(rules *protocol.Rules, file string, bucket *protocol.Bucket) error {
+	if rules == nil || rules.BackupsTo == "" || bucket == nil {
 		return nil
 	}
-	host := "s3." + storage.Region + ".amazonaws.com"
-	if storage.Endpoint != "" {
-		endpoint, err := url.Parse(storage.Endpoint)
+	host := "s3." + bucket.Region + ".amazonaws.com"
+	if bucket.Endpoint != "" {
+		endpoint, err := url.Parse(bucket.Endpoint)
 		if err != nil {
 			return refused(file, fmt.Sprintf("backups-to allows only %s", rules.BackupsTo))
 		}
 		host = endpoint.Host
 	}
-	if host+"/"+storage.Bucket != rules.BackupsTo {
+	if host+"/"+bucket.Bucket != rules.BackupsTo {
 		return refused(file, fmt.Sprintf("backups-to allows only %s", rules.BackupsTo))
 	}
 	return nil

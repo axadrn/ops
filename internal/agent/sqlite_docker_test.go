@@ -22,7 +22,7 @@ import (
 // that stops and starts. Run with MOIN_TEST_S3 set and:
 // go test -tags docker -run SQLiteGoBack ./internal/agent/
 func TestSQLiteGoBack(t *testing.T) {
-	endpoint, bucket := testS3(t)
+	endpoint, bucketName := testS3(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	a := newApps(t.TempDir(), func(protocol.MessageType, string, any) {})
@@ -36,8 +36,8 @@ func TestSQLiteGoBack(t *testing.T) {
 		t.Fatalf("compose up: %v %s", err, out)
 	}
 	defer exec.Command("docker", "compose", "-p", project(app), "-f", composeFile, "down").Run()
-	storage := &protocol.BackupStorage{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, Path: "goback", Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
-	if err := b.configure(ctx, storage, nil); err != nil {
+	bucket := &protocol.Bucket{Endpoint: endpoint, Region: "us-east-1", Bucket: bucketName, Path: "goback", Workspace: "ws-one", AccessKey: "x", SecretKey: "y"}
+	if err := b.configure(ctx, bucket, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer b.configure(ctx, nil, nil)

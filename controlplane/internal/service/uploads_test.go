@@ -14,11 +14,11 @@ import (
 // app of the same name, and an app created again gets a new folder. No
 // upload key of one is ever inside the folder of another.
 func TestUploadKeys(t *testing.T) {
-	storage := protocol.BackupStorage{Bucket: "shared", Path: "moin"}
+	bucket := protocol.Bucket{Bucket: "shared", Path: "moin"}
 	var keys []string
 	for _, item := range []struct{ workspace, appID string }{{"ws-one", "app-1"}, {"ws-two", "app-2"}, {"ws-one", "app-3"}} {
-		storage.Workspace = item.workspace
-		keys = append(keys, uploadKey(storage, &model.App{ID: item.appID, Name: "blog"}, testUpload))
+		bucket.Workspace = item.workspace
+		keys = append(keys, uploadKey(bucket, &model.App{ID: item.appID, Name: "blog"}, testUpload))
 	}
 	if keys[0] != "moin/ws-one/blog/app-1/uploads/"+testUpload+".tar.gz" {
 		t.Fatalf("key = %s", keys[0])
@@ -30,8 +30,8 @@ func TestUploadKeys(t *testing.T) {
 			}
 		}
 	}
-	storage.Path = ""
-	if key := uploadKey(storage, &model.App{ID: "app-1", Name: "blog"}, testUpload); key != "ws-one/blog/app-1/uploads/"+testUpload+".tar.gz" {
+	bucket.Path = ""
+	if key := uploadKey(bucket, &model.App{ID: "app-1", Name: "blog"}, testUpload); key != "ws-one/blog/app-1/uploads/"+testUpload+".tar.gz" {
 		t.Errorf("key without a folder = %s", key)
 	}
 }
@@ -55,8 +55,8 @@ func TestUploadGoesToTheWorkspaceFolder(t *testing.T) {
 	if want := "/owner/" + owner.WorkspaceID + "/blog/" + app.ID + "/uploads/" + upload.ID + ".tar.gz"; link.Path != want {
 		t.Errorf("upload path = %s, want %s", link.Path, want)
 	}
-	if storage := apps.backupConfig(owner.WorkspaceID, server.ID).Storage; storage == nil || storage.Workspace != owner.WorkspaceID {
-		t.Errorf("the agent's bucket = %+v, want the workspace folder", storage)
+	if bucket := apps.backupConfig(owner.WorkspaceID, server.ID).Bucket; bucket == nil || bucket.Workspace != owner.WorkspaceID {
+		t.Errorf("the agent's bucket = %+v, want the workspace folder", bucket)
 	}
 	shown, err := apps.DefaultBucket(owner.WorkspaceID)
 	if err != nil || shown.Folder != owner.WorkspaceID+"/" || shown.AppFolder(app) != owner.WorkspaceID+"/blog/"+app.ID+"/" {

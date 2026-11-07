@@ -2,7 +2,7 @@ package protocol
 
 import "time"
 
-// BackupStorage is an S3-compatible bucket. Everything of a workspace
+// Bucket is an S3-compatible bucket. Everything of a workspace
 // goes under <Path>/<Workspace>/, each app under <app>/<app ID>/:
 //
 //	<app>/<app ID>/uploads/                      sources of moin deploy, a day
@@ -14,7 +14,7 @@ import "time"
 // Workspace is the workspace's ID, which never changes, so workspaces
 // sharing one bucket never touch each other's files. Name is the bucket's
 // name in moin.
-type BackupStorage struct {
+type Bucket struct {
 	Endpoint  string `json:"endpoint"`
 	Region    string `json:"region"`
 	Bucket    string `json:"bucket"`
@@ -25,16 +25,17 @@ type BackupStorage struct {
 	Name      string `json:"name,omitempty"`
 }
 
-// BackupConfig is where backups go. Storage is the workspace's default
-// bucket; without it the agent stops recording. AppStorage is the bucket
+// BackupConfig is where backups go. Bucket is the workspace's default
+// bucket; without it the agent stops recording. AppBuckets is the bucket
 // of each app, by name, that uses another one than the default. Apps are
 // the IDs of the server's apps by name: an app deployed before deploys
 // brought its ID gets it here, so its backups start without another
-// deploy.
+// deploy. The JSON keys storage and app_storage stay as they are: agents
+// of protocol version 1 read them.
 type BackupConfig struct {
-	Storage    *BackupStorage            `json:"storage,omitempty"`
-	AppStorage map[string]*BackupStorage `json:"app_storage,omitempty"`
-	Apps       map[string]string         `json:"apps,omitempty"`
+	Bucket     *Bucket            `json:"storage,omitempty"`
+	AppBuckets map[string]*Bucket `json:"app_storage,omitempty"`
+	Apps       map[string]string  `json:"apps,omitempty"`
 }
 
 // BackupRequest names an app; Database narrows it to one database.

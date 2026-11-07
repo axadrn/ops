@@ -145,7 +145,7 @@ func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func()
 	if err != nil {
 		return err
 	}
-	storage, prefix, err := b.walgPrefix(app, database)
+	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func()
 	if err != nil {
 		return err
 	}
-	envFile, remove, err := walgEnv(storage, prefix, target)
+	envFile, remove, err := walgEnv(bucket, prefix, target)
 	if err != nil {
 		return err
 	}
@@ -441,7 +441,7 @@ func (e *postgresEngine) Check(ctx context.Context) error {
 	default:
 		return liveErr
 	}
-	storage, prefix, err := b.walgPrefix(app, database)
+	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return err
 	}
@@ -449,7 +449,7 @@ func (e *postgresEngine) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	envFile, remove, err := walgEnv(storage, prefix, live)
+	envFile, remove, err := walgEnv(bucket, prefix, live)
 	if err != nil {
 		return err
 	}
@@ -667,12 +667,12 @@ func (b *backups) walgFilesAfter(ctx context.Context, app string, database proto
 // walgList calls each with the name and time of everything in the log
 // folder of a database.
 func (b *backups) walgList(ctx context.Context, app string, database protocol.Database, each func(name string, modified time.Time)) error {
-	storage, prefix, err := b.walgPrefix(app, database)
+	bucket, prefix, err := b.walgPrefix(app, database)
 	if err != nil {
 		return err
 	}
 	folder := prefix + "/wal_005/"
-	pages := s3.NewListObjectsV2Paginator(s3Client(storage), &s3.ListObjectsV2Input{Bucket: aws.String(storage.Bucket), Prefix: aws.String(folder)})
+	pages := s3.NewListObjectsV2Paginator(s3Client(bucket), &s3.ListObjectsV2Input{Bucket: aws.String(bucket.Bucket), Prefix: aws.String(folder)})
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {

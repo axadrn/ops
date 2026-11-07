@@ -107,10 +107,10 @@ type backups struct {
 	send func(protocol.MessageType, string, any)
 
 	mu sync.Mutex
-	// storage is the workspace's default bucket, appStorage the bucket of
+	// defaultBucket is the workspace's default bucket, appBuckets the bucket of
 	// each app that uses another one.
-	storage    *protocol.BackupStorage
-	appStorage map[string]*protocol.BackupStorage
+	defaultBucket *protocol.Bucket
+	appBuckets    map[string]*protocol.Bucket
 	// store and watched are Litestream's, see backup_sqlite.go.
 	store   *litestream.Store
 	watched map[string]watched
@@ -162,18 +162,18 @@ func (r *runner) backupConfig(ctx context.Context, message protocol.Message, rul
 		r.fail(message, err)
 		return
 	}
-	if err := checkStorage(rules, r.rulesFile, config.Storage); err != nil {
+	if err := checkBucket(rules, r.rulesFile, config.Bucket); err != nil {
 		r.fail(message, err)
 		return
 	}
-	for _, storage := range config.AppStorage {
-		if err := checkStorage(rules, r.rulesFile, storage); err != nil {
+	for _, bucket := range config.AppBuckets {
+		if err := checkBucket(rules, r.rulesFile, bucket); err != nil {
 			r.fail(message, err)
 			return
 		}
 	}
 	kept := r.apps.keepIDs(config.Apps)
-	if err := r.backups.configure(ctx, config.Storage, config.AppStorage); err != nil {
+	if err := r.backups.configure(ctx, config.Bucket, config.AppBuckets); err != nil {
 		r.fail(message, err)
 		return
 	}
@@ -184,18 +184,18 @@ func (r *runner) backupConfig(ctx context.Context, message protocol.Message, rul
 }
 
 // configure sets the default bucket and the buckets of single apps, and
-// records every database into its app's bucket. A nil storage stops it.
-func (b *backups) configure(ctx context.Context, storage *protocol.BackupStorage, appStorage map[string]*protocol.BackupStorage) error {
-	for _, other := range appStorage {
+// records every database into its app's bucket. A nil bucket stops it.
+func (b *backups) configure(ctx context.Context, bucket *protocol.Bucket, appBuckets map[string]*protocol.Bucket) error {
+	for _, other := range appBuckets {
 		if other == nil || other.Workspace == "" {
 			return errors.New("start backups: a bucket has no workspace folder, update the control plane")
 		}
 	}
 	b.mu.Lock()
-	if b.storage != nil && storage != nil && *b.storage == *storage {
+	if b.defaultBucket != nil && bucket != nil && *b.defaultBucket == *bucket {
 		// The same default: only apps that changed buckets start again.
-		changed := !sameStorage(b.appStorage, appStorage)
-		b.appStorage = appStorage
+		changed := !sameBuckets(b.appBuckets, appBuckets)
+		b.appBuckets = appBuckets
 		b.mu.Unlock()
 		if changed {
 			b.reconcile()
@@ -203,13 +203,13 @@ func (b *backups) configure(ctx context.Context, storage *protocol.BackupStorage
 		return nil
 	}
 	b.closeStoreLocked()
-	b.storage, b.appStorage = storage, appStorage
-	if storage == nil {
+	b.defaultBucket, b.appBuckets = bucket, appBuckets
+	if bucket == nil {
 		b.mu.Unlock()
 		return nil
 	}
-	if storage.Workspace == "" {
-		b.storage = nil
+	if bucket.Workspace == "" {
+		b.defaultBucket = nil
 		b.mu.Unlock()
 		return errors.New("start backups: the bucket has no workspace folder, update the control plane")
 	}
@@ -316,33 +316,33 @@ func (b *backups) prefix(app, database string) (string, error) {
 // appFolder is an app's folder in its bucket: <path>/<workspace>/<app>/<app ID>.
 // The caller holds the lock.
 func (b *backups) appFolder(app string) (string, error) {
-	storage := b.storageFor(app)
-	if storage == nil {
+	bucket := b.bucketFor(app)
+	if bucket == nil {
 		return "", errors.New("backups are not set up")
 	}
 	id := b.apps.appID(app)
 	if id == "" {
 		return "", fmt.Errorf("deploy %s once more to start its backups", app)
 	}
-	return strings.Trim(path.Join(storage.Path, storage.Workspace, app, id), "/"), nil
+	return strings.Trim(path.Join(bucket.Path, bucket.Workspace, app, id), "/"), nil
 }
 
-// storageFor is the bucket of an app: its own, or the default. The caller
+// bucketFor is the bucket of an app: its own, or the default. The caller
 // holds the lock.
-func (b *backups) storageFor(app string) *protocol.BackupStorage {
-	if storage := b.appStorage[app]; storage != nil {
-		return storage
+func (b *backups) bucketFor(app string) *protocol.Bucket {
+	if bucket := b.appBuckets[app]; bucket != nil {
+		return bucket
 	}
-	return b.storage
+	return b.defaultBucket
 }
 
-// sameStorage reports whether two sets of app buckets are the same.
-func sameStorage(one, other map[string]*protocol.BackupStorage) bool {
+// sameBuckets reports whether two sets of app buckets are the same.
+func sameBuckets(one, other map[string]*protocol.Bucket) bool {
 	if len(one) != len(other) {
 		return false
 	}
-	for app, storage := range one {
-		if theirs := other[app]; theirs == nil || storage == nil || *theirs != *storage {
+	for app, bucket := range one {
+		if theirs := other[app]; theirs == nil || bucket == nil || *theirs != *bucket {
 			return false
 		}
 	}
@@ -350,39 +350,39 @@ func sameStorage(one, other map[string]*protocol.BackupStorage) bool {
 }
 
 // bucketOf is the bucket and the folder of a database, for one call.
-func (b *backups) bucketOf(app string, database protocol.Database) (*protocol.BackupStorage, string, error) {
+func (b *backups) bucketOf(app string, database protocol.Database) (*protocol.Bucket, string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	storage := b.storageFor(app)
-	if storage == nil {
+	bucket := b.bucketFor(app)
+	if bucket == nil {
 		return nil, "", errors.New("backups are not set up")
 	}
 	prefix, err := b.prefix(app, database.Path)
 	if err != nil {
 		return nil, "", err
 	}
-	copied := *storage
+	copied := *bucket
 	return &copied, prefix, nil
 }
 
-func s3Client(storage *protocol.BackupStorage) *s3.Client {
-	region := storage.Region
+func s3Client(bucket *protocol.Bucket) *s3.Client {
+	region := bucket.Region
 	if region == "" {
 		region = "auto"
 	}
 	return s3.New(s3.Options{
 		Region:       region,
-		Credentials:  credentials.NewStaticCredentialsProvider(storage.AccessKey, storage.SecretKey, ""),
-		BaseEndpoint: aws.String(endpointOrAWS(storage)),
-		UsePathStyle: storage.Endpoint != "",
+		Credentials:  credentials.NewStaticCredentialsProvider(bucket.AccessKey, bucket.SecretKey, ""),
+		BaseEndpoint: aws.String(endpointOrAWS(bucket)),
+		UsePathStyle: bucket.Endpoint != "",
 	})
 }
 
-func endpointOrAWS(storage *protocol.BackupStorage) string {
-	if storage.Endpoint != "" {
-		return storage.Endpoint
+func endpointOrAWS(bucket *protocol.Bucket) string {
+	if bucket.Endpoint != "" {
+		return bucket.Endpoint
 	}
-	region := storage.Region
+	region := bucket.Region
 	if region == "" {
 		region = "us-east-1"
 	}
@@ -390,14 +390,14 @@ func endpointOrAWS(storage *protocol.BackupStorage) string {
 }
 
 // ready returns the bucket, or an error people can act on.
-func (b *backups) ready() (*protocol.BackupStorage, error) {
+func (b *backups) ready() (*protocol.Bucket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.storage == nil {
+	if b.defaultBucket == nil {
 		return nil, errors.New("backups are not set up: add a bucket under Data")
 	}
-	storage := *b.storage
-	return &storage, nil
+	bucket := *b.defaultBucket
+	return &bucket, nil
 }
 
 // databases returns the app's running databases, or the one named.
@@ -566,12 +566,12 @@ func copyExt(database protocol.Database) string {
 // keepCopy takes the one full copy of a database before a restore and
 // puts it in its before-restore folder.
 func (b *backups) keepCopy(ctx context.Context, app string, database protocol.Database, e engine) error {
-	storage, prefix, err := b.bucketOf(app, database)
+	bucket, prefix, err := b.bucketOf(app, database)
 	if err != nil {
 		return err
 	}
 	id := time.Now().UTC().Format(protocol.CopyIDLayout)
-	_, err = b.upload(ctx, storage, prefix+"/before-restore/"+id+copyExt(database), e)
+	_, err = b.upload(ctx, bucket, prefix+"/before-restore/"+id+copyExt(database), e)
 	if err != nil {
 		return fmt.Errorf("the copy before the restore: %w", err)
 	}
@@ -605,14 +605,14 @@ func (b *backups) download(ctx context.Context, request protocol.BackupRequest) 
 		return protocol.BackupFile{}, err
 	}
 	b.mu.Lock()
-	storage := b.storageFor(request.App)
+	bucket := b.bucketFor(request.App)
 	folder, err := b.appFolder(request.App)
 	b.mu.Unlock()
 	if err != nil {
 		return protocol.BackupFile{}, err
 	}
 	key := folder + "/downloads/" + request.App + "-" + databaseKey(database.Path) + "-" + time.Now().UTC().Format(protocol.CopyIDLayout) + copyExt(database)
-	size, err := b.upload(ctx, storage, key, b.engine(request.App, database))
+	size, err := b.upload(ctx, bucket, key, b.engine(request.App, database))
 	if err != nil {
 		return protocol.BackupFile{}, fmt.Errorf("copy %s: %w", database.Path, err)
 	}
@@ -621,7 +621,7 @@ func (b *backups) download(ctx context.Context, request protocol.BackupRequest) 
 }
 
 // upload has the engine write a full copy and puts it at key.
-func (b *backups) upload(ctx context.Context, storage *protocol.BackupStorage, key string, e engine) (int64, error) {
+func (b *backups) upload(ctx context.Context, bucket *protocol.Bucket, key string, e engine) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, copyTimeout)
 	defer cancel()
 	file, cleanup, err := e.Download(ctx)
@@ -638,7 +638,7 @@ func (b *backups) upload(ctx context.Context, storage *protocol.BackupStorage, k
 	if err != nil {
 		return 0, err
 	}
-	_, err = s3Client(storage).PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(key), Body: in, ContentLength: aws.Int64(info.Size())})
+	_, err = s3Client(bucket).PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(key), Body: in, ContentLength: aws.Int64(info.Size())})
 	if err != nil {
 		return 0, fmt.Errorf("upload: %w", err)
 	}
@@ -648,13 +648,13 @@ func (b *backups) upload(ctx context.Context, storage *protocol.BackupStorage, k
 // copies lists the copies before restores of a database, newest first,
 // those of the last 7 days.
 func (b *backups) copies(ctx context.Context, app string, database protocol.Database) ([]protocol.Copy, error) {
-	storage, prefix, err := b.bucketOf(app, database)
+	bucket, prefix, err := b.bucketOf(app, database)
 	if err != nil {
 		return nil, err
 	}
 	folder := prefix + "/before-restore/"
 	copies := []protocol.Copy{}
-	pages := s3.NewListObjectsV2Paginator(s3Client(storage), &s3.ListObjectsV2Input{Bucket: aws.String(storage.Bucket), Prefix: aws.String(folder)})
+	pages := s3.NewListObjectsV2Paginator(s3Client(bucket), &s3.ListObjectsV2Input{Bucket: aws.String(bucket.Bucket), Prefix: aws.String(folder)})
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {
@@ -676,11 +676,11 @@ func (b *backups) copies(ctx context.Context, app string, database protocol.Data
 // fetchCopy downloads a copy before a restore into a file in the app's
 // folder on the server.
 func (b *backups) fetchCopy(ctx context.Context, app string, database protocol.Database, id string) (string, error) {
-	storage, prefix, err := b.bucketOf(app, database)
+	bucket, prefix, err := b.bucketOf(app, database)
 	if err != nil {
 		return "", err
 	}
-	object, err := s3Client(storage).GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(prefix + "/before-restore/" + id + copyExt(database))})
+	object, err := s3Client(bucket).GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket.Bucket), Key: aws.String(prefix + "/before-restore/" + id + copyExt(database))})
 	var missing *types.NoSuchKey
 	if errors.As(err, &missing) {
 		return "", fmt.Errorf("there is no copy from %s of %s: it is older than 7 days, or of another database", id, database.Path)
@@ -783,33 +783,33 @@ func (b *backups) sweepLoop(ctx context.Context) {
 // the default bucket and in every bucket of an app.
 func (b *backups) sweepOnce(ctx context.Context, now time.Time) {
 	b.mu.Lock()
-	if b.storage == nil {
+	if b.defaultBucket == nil {
 		b.mu.Unlock()
 		return
 	}
-	storages := []protocol.BackupStorage{*b.storage}
-	for _, storage := range b.appStorage {
-		if !slices.ContainsFunc(storages, func(known protocol.BackupStorage) bool {
-			return known.Endpoint == storage.Endpoint && known.Bucket == storage.Bucket && known.Path == storage.Path
+	buckets := []protocol.Bucket{*b.defaultBucket}
+	for _, bucket := range b.appBuckets {
+		if !slices.ContainsFunc(buckets, func(known protocol.Bucket) bool {
+			return known.Endpoint == bucket.Endpoint && known.Bucket == bucket.Bucket && known.Path == bucket.Path
 		}) {
-			storages = append(storages, *storage)
+			buckets = append(buckets, *bucket)
 		}
 	}
 	b.mu.Unlock()
-	for _, storage := range storages {
-		sweepIn(ctx, &storage, now)
+	for _, bucket := range buckets {
+		sweepIn(ctx, &bucket, now)
 	}
 }
 
 // sweepIn sweeps one bucket: <app>/<app ID>/uploads/ and downloads/ after
 // a day, <app>/<app ID>/<database>/before-restore/ after 7 days. Nothing
 // else is touched.
-func sweepIn(ctx context.Context, storage *protocol.BackupStorage, now time.Time) {
-	client, bucket := s3Client(storage), storage.Bucket
-	root := strings.TrimLeft(path.Join(storage.Path, storage.Workspace)+"/", "/")
+func sweepIn(ctx context.Context, bucket *protocol.Bucket, now time.Time) {
+	client, name := s3Client(bucket), bucket.Bucket
+	root := strings.TrimLeft(path.Join(bucket.Path, bucket.Workspace)+"/", "/")
 	folders := func(prefix string) []string {
 		var found []string
-		pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String(prefix), Delimiter: aws.String("/")})
+		pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(name), Prefix: aws.String(prefix), Delimiter: aws.String("/")})
 		for pages.HasMorePages() {
 			page, err := pages.NextPage(ctx)
 			if err != nil {
@@ -823,7 +823,7 @@ func sweepIn(ctx context.Context, storage *protocol.BackupStorage, now time.Time
 		return found
 	}
 	sweep := func(prefix string, before time.Time) {
-		pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})
+		pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(name), Prefix: aws.String(prefix)})
 		for pages.HasMorePages() {
 			page, err := pages.NextPage(ctx)
 			if err != nil {
@@ -834,7 +834,7 @@ func sweepIn(ctx context.Context, storage *protocol.BackupStorage, now time.Time
 				if object.LastModified == nil || !object.LastModified.Before(before) {
 					continue
 				}
-				_, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: object.Key})
+				_, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(name), Key: object.Key})
 				if err != nil {
 					slog.Warn("backup: sweep", "key", aws.ToString(object.Key), "error", err)
 				} else {

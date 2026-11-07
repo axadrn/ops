@@ -33,7 +33,7 @@ type sqliteEngine struct {
 // watched is one recorded SQLite file; prefix is its folder in the bucket.
 type watched struct {
 	app      string
-	storage  protocol.BackupStorage
+	bucket   protocol.Bucket
 	prefix   string
 	database protocol.Database
 	// db is Litestream's database, for its sync errors.
@@ -61,9 +61,9 @@ func (e *sqliteEngine) Record(ctx context.Context) error {
 		}
 		return err
 	}
-	item := watched{app: e.app, storage: *b.storageFor(e.app), prefix: prefix, database: e.database}
+	item := watched{app: e.app, bucket: *b.bucketFor(e.app), prefix: prefix, database: e.database}
 	old, known := b.watched[hostPath]
-	if known && old.prefix == item.prefix && old.storage == item.storage {
+	if known && old.prefix == item.prefix && old.bucket == item.bucket {
 		b.mu.Unlock()
 		if old.db != nil {
 			if why := old.db.SyncDiagnostic().Error; why != "" {
@@ -72,11 +72,11 @@ func (e *sqliteEngine) Record(ctx context.Context) error {
 		}
 		return nil
 	}
-	moved := b.moved(hostPath, item.storage, item.prefix)
+	moved := b.moved(hostPath, item.bucket, item.prefix)
 	db := litestream.NewDB(hostPath)
 	item.db = db
 	b.watched[hostPath] = item
-	db.Replica = litestream.NewReplicaWithClient(db, replicaClientAt(&item.storage, item.prefix))
+	db.Replica = litestream.NewReplicaWithClient(db, replicaClientAt(&item.bucket, item.prefix))
 	b.mu.Unlock()
 	go func() {
 		// The same file under a new app ID: the old one stops first, or
@@ -136,14 +136,14 @@ func (e *sqliteEngine) GoBack(ctx context.Context, to moment, keep func() error)
 		_ = b.store.UnregisterDB(ctx, hostPath)
 	}
 	delete(b.watched, hostPath)
-	storage := b.storageFor(e.app)
+	bucket := b.bucketFor(e.app)
 	prefix, prefixErr := b.prefix(e.app, e.database.Path)
 	b.mu.Unlock()
 	swapErr := swapDatabase(restored, hostPath)
 	// The history in the bucket belongs to the file before; Litestream
 	// starts it again from the restored one.
-	if swapErr == nil && prefixErr == nil && storage != nil {
-		if err := replicaClientAt(storage, prefix).DeleteAll(ctx); err != nil {
+	if swapErr == nil && prefixErr == nil && bucket != nil {
+		if err := replicaClientAt(bucket, prefix).DeleteAll(ctx); err != nil {
 			slog.Warn("backup: start the history again", "error", err)
 		}
 	}
@@ -219,21 +219,21 @@ func (e *sqliteEngine) Window(ctx context.Context) (window, error) {
 
 // client is where Litestream keeps the changes of the file.
 func (e *sqliteEngine) client() (*lss3.ReplicaClient, error) {
-	storage, prefix, err := e.b.bucketOf(e.app, e.database)
+	bucket, prefix, err := e.b.bucketOf(e.app, e.database)
 	if err != nil {
 		return nil, err
 	}
-	return replicaClientAt(storage, prefix), nil
+	return replicaClientAt(bucket, prefix), nil
 }
 
-func replicaClientAt(storage *protocol.BackupStorage, prefix string) *lss3.ReplicaClient {
+func replicaClientAt(bucket *protocol.Bucket, prefix string) *lss3.ReplicaClient {
 	client := lss3.NewReplicaClient()
-	client.AccessKeyID = storage.AccessKey
-	client.SecretAccessKey = storage.SecretKey
-	client.Region = storage.Region
-	client.Bucket = storage.Bucket
-	client.Endpoint = storage.Endpoint
-	client.ForcePathStyle = storage.Endpoint != ""
+	client.AccessKeyID = bucket.AccessKey
+	client.SecretAccessKey = bucket.SecretKey
+	client.Region = bucket.Region
+	client.Bucket = bucket.Bucket
+	client.Endpoint = bucket.Endpoint
+	client.ForcePathStyle = bucket.Endpoint != ""
 	client.Path = prefix + "/litestream"
 	return client
 }
@@ -290,12 +290,12 @@ func (b *backups) forgetSQLite(running map[string][]protocol.Database) {
 // what the old place holds, and against a new, empty one Litestream would
 // wait for files it already cleaned up. The new place starts with a full
 // snapshot.
-func (b *backups) moved(hostPath string, storage protocol.BackupStorage, prefix string) bool {
+func (b *backups) moved(hostPath string, bucket protocol.Bucket, prefix string) bool {
 	file := filepath.Join(filepath.Dir(b.apps.dir), "backup-targets.json")
 	targets := map[string]string{}
 	body, _ := os.ReadFile(file)
 	_ = json.Unmarshal(body, &targets)
-	target := storage.Endpoint + "|" + storage.Bucket + "|" + prefix
+	target := bucket.Endpoint + "|" + bucket.Bucket + "|" + prefix
 	if targets[hostPath] == target {
 		return false
 	}
