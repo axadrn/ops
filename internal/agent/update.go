@@ -69,12 +69,13 @@ func (r *runner) agentUpdate(ctx context.Context, message protocol.Message, rule
 		r.fail(message, fmt.Errorf("this server has rules in %s, so only its owner updates the agent, on the server: %s", r.rulesFile, protocol.UpdateCommand(r.url(), build.Name, runtime.GOARCH)))
 		return
 	}
-	if r.busy.Load() > 0 {
+	if !r.beginUpdate() {
 		r.fail(message, errors.New("a deploy or a restore is running: update the agent when it is done"))
 		return
 	}
 	slog.Info("update", "from", build.Version, "to", update.Version)
 	if err := r.updater.install(ctx, update); err != nil {
+		r.endUpdate()
 		slog.Error("update failed", "error", err)
 		r.fail(message, err)
 		return

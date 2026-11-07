@@ -38,10 +38,29 @@ type postgresEngine struct {
 // daily base backup.
 func (e *postgresEngine) Record(ctx context.Context) error {
 	b, app, database := e.b, e.app, e.database
+	b.mu.Lock()
+	restoring := b.restoring[key(app, database)]
+	b.mu.Unlock()
+	if restoring {
+		return nil
+	}
+	state := b.walgState(key(app, database))
+	b.walg.mu.Lock()
+	fresh := state.fresh
+	b.walg.mu.Unlock()
+	if fresh {
+		// A restore swapped the data but could not start recording on it.
+		if err := b.walgFresh(ctx, app, database); err != nil {
+			return fmt.Errorf("record again after the restore: %w", err)
+		}
+		b.walgNeedsFresh(app, database, false)
+		if err := b.walgBase(ctx, app, database); err != nil {
+			return fmt.Errorf("the base backup after the restore: %w", err)
+		}
+	}
 	if _, err := b.walgCheckSlot(ctx, app, database); err != nil {
 		slog.Warn("backup: check the WAL-G slot", "app", app, "database", database.Path, "error", err)
 	}
-	state := b.walgState(key(app, database))
 	if b.walgStuck(ctx, app, database) {
 		slog.Error("backup: WAL-G lost its place in the log; starting it over with a new base backup", "app", app, "database", database.Path)
 		b.walg.mu.Lock()
@@ -52,6 +71,9 @@ func (e *postgresEngine) Record(ctx context.Context) error {
 		}
 	}
 	if err := b.walgEnsure(ctx, app, database); err != nil {
+		return err
+	}
+	if err := b.pushPending(ctx, app, database); err != nil {
 		return err
 	}
 	if err := b.walgSwitch(ctx, app, database); err != nil {
@@ -75,17 +97,20 @@ func (e *postgresEngine) Record(ctx context.Context) error {
 }
 
 // GoBack puts the database back to a moment, or to a full copy.
-func (e *postgresEngine) GoBack(ctx context.Context, to moment, keep func() error) error {
-	if to.File != "" {
-		return e.putBack(ctx, to.File, keep)
+func (e *postgresEngine) GoBack(ctx context.Context, to moment, run *restoreRun) error {
+	if pending := e.b.historiesPending(e.app, e.database); len(pending) > 0 {
+		return fmt.Errorf("the timeline history of the last restore is not in the bucket yet (%s): moin tries again every minute; restore once the backup works again", strings.Join(pending, ", "))
 	}
-	return e.goBackTo(ctx, to.At, keep)
+	if to.File != "" {
+		return e.putBack(ctx, to.File, run)
+	}
+	return e.goBackTo(ctx, to.At, run)
 }
 
 // putBack restores a pg_dump into the live database in one transaction:
 // it changes all or nothing. The app's other services stop first, so the
 // copy of now is the last state; they start again after, always.
-func (e *postgresEngine) putBack(ctx context.Context, file string, keep func() error) error {
+func (e *postgresEngine) putBack(ctx context.Context, file string, run *restoreRun) error {
 	b := e.b
 	target, err := b.apps.postgres(ctx, e.app, e.database)
 	if err != nil {
@@ -95,12 +120,16 @@ func (e *postgresEngine) putBack(ctx context.Context, file string, keep func() e
 	if err != nil {
 		return err
 	}
-	if err := keep(); err != nil {
+	run.step(stepStopped)
+	if err := run.keep(); err != nil {
 		return writers.startAfter(fmt.Errorf("%w; nothing changed", err))
 	}
-	if err := target.restoreDump(context.WithoutCancel(ctx), file); err != nil {
+	dumpCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dumpTimeout)
+	defer cancel()
+	if err := target.restoreDump(dumpCtx, file); err != nil {
 		return writers.startAfter(fmt.Errorf("pg_restore, nothing changed: %w", err))
 	}
+	run.step(stepSwapped)
 	return writers.startAfter(nil)
 }
 
@@ -128,7 +157,7 @@ func (e *postgresEngine) stopWriters(ctx context.Context) (*appStop, error) {
 // on it moin puts its history file in the bucket, so later restores and
 // the daily check follow it. Before that nothing in the bucket points to
 // the new timeline, so a restore that fails halfway leaves no trace.
-func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func() error) error {
+func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, run *restoreRun) error {
 	b, app, database := e.b, e.app, e.database
 	if note := b.walgUnsupported(app, database); note != "" {
 		return errors.New(note)
@@ -164,7 +193,7 @@ func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func()
 		return err
 	}
 	defer remove()
-	run := func(user string, extra []string, volume string, command ...string) (string, error) {
+	docker := func(user string, extra []string, volume string, command ...string) (string, error) {
 		args := []string{"run", "--rm", "-u", user}
 		if volume != "" {
 			args = append(args, "-v", volume+":/restore")
@@ -184,6 +213,12 @@ func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func()
 		return fmt.Errorf("no base backup reaches back to %s on %s: pick a later moment", at.Format("Jan 2 15:04 UTC"), database.Path)
 	}
 
+	// The restored data needs a volume of its size, and the swap a copy
+	// of it next to the live data.
+	if err := e.enoughSpace(ctx, target, data); err != nil {
+		return err
+	}
+
 	// Recover into a new volume while the app keeps running.
 	volume := ourName + "-restore-" + app + "-" + database.Service + "-" + time.Now().UTC().Format("20060102t150405")
 	if _, err := b.apps.output(ctx, "docker", "volume", "create", volume); err != nil {
@@ -195,10 +230,10 @@ func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func()
 			_, _ = b.apps.output(context.Background(), "docker", "volume", "rm", "-f", volume)
 		}
 	}()
-	if out, err := run("root", nil, volume, "sh", "-c", "chown postgres:postgres /restore && chmod 700 /restore"); err != nil {
+	if out, err := docker("root", nil, volume, "sh", "-c", "chown postgres:postgres /restore && chmod 700 /restore"); err != nil {
 		return fmt.Errorf("prepare the restore: %v %s", err, out)
 	}
-	if out, err := run("postgres", walg, volume, "backup-fetch", "/restore", base); err != nil {
+	if out, err := docker("postgres", walg, volume, "backup-fetch", "/restore", base); err != nil {
 		return fmt.Errorf("fetch the base backup %s: %v %s", base, err, out)
 	}
 	stamp := at.Format("2006-01-02 15:04:05.000000+00")
@@ -218,12 +253,14 @@ func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func()
 	if err != nil {
 		return err
 	}
-	if err := keep(); err != nil {
+	run.step(stepStopped)
+	if err := run.keep(); err != nil {
 		return writers.startAfter(fmt.Errorf("%w; nothing changed", err))
 	}
 	// From here on the restore ends what it started, also when the agent
-	// stops.
-	ctx = context.WithoutCancel(ctx)
+	// stops, within a bound.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), swapTimeout)
+	defer cancel()
 
 	// Swap: stop the database and its companion, replace the data, start
 	// the app again.
@@ -232,65 +269,141 @@ func (e *postgresEngine) goBackTo(ctx context.Context, at time.Time, keep func()
 	if err := all.stop(); err != nil {
 		return err
 	}
-	_, swapErr := b.apps.output(ctx, "docker", "run", "--rm", "-u", "root", "-v", volume+":/restore:ro", "-v", data.mount, "--entrypoint", "sh", target.image, "-c", pgSwapScript, data.dir)
+	run.mark.Mount, run.mark.Dir, run.mark.Image, run.mark.Volume = data.mount, data.dir, target.image, volume
+	run.step(stepSwapping)
+	code, out, swapErr := exitCode(ctx, "docker", "run", "--rm", "-u", "root", "-v", volume+":/restore:ro", "-v", data.mount, "--entrypoint", "sh", target.image, "-c", pgSwapScript, data.dir, run.mark.ID)
 	switch {
-	case swapErr != nil && strings.Contains(swapErr.Error(), "nothing changed"):
-		return all.startAfter(fmt.Errorf("swap the data: %w", swapErr))
+	case code == swapUnchanged || code == swapRefused:
+		return all.startAfter(fmt.Errorf("swap the data: %s", out))
 	case swapErr != nil:
-		// Half the data is new: the app stays stopped, so nothing writes
-		// to it, and the restored data stays in its volume.
+		// Half the data is new, or nobody knows: the app stays stopped, so
+		// nothing writes to it, and the restored data stays in its volume.
 		keepVolume = true
-		return fmt.Errorf("swap the data: %w. %s stays stopped; the restored data is in the volume %s", swapErr, app, volume)
+		return fmt.Errorf("swap the data: %v %s. %s stays stopped; the restored data is in the volume %s, the data before in .moin-old next to its data", swapErr, out, app, volume)
 	}
-	if err := all.startAfter(nil); err != nil {
-		return err
-	}
-	// The app runs on the new timeline: its history goes to the bucket,
-	// so later restores and the daily check follow the log there.
-	if out, err := run("postgres", []string{"--entrypoint", "sh"}, volume, "-c", `for f in /restore/pg_wal/*.history; do [ -e "$f" ] || continue; /usr/local/bin/wal-g wal-push "$f" || exit 1; done`); err != nil {
+	run.step(stepSwapped)
+	// The new timeline's history goes to the bucket before Postgres writes
+	// a thing on it, so a moment after the restore always maps to it. If
+	// the bucket is out of reach, Record tries again every minute, the
+	// backup says so, and a restore waits for it.
+	if out, err := docker("postgres", []string{"--entrypoint", "sh"}, volume, "-c", `for f in /restore/pg_wal/*.history; do [ -e "$f" ] || continue; /usr/local/bin/wal-g wal-push "$f" || exit 1; done`); err != nil {
 		slog.Error("backup: save the timeline history", "app", app, "error", err, "output", out)
+		b.pendHistories(app, database, volume, docker)
 	}
 	// The restored data holds the old slot, whose place in the log is
 	// gone: the companion starts over with a fresh slot, and a base backup
-	// on the new timeline right away.
-	if err := b.walgFresh(ctx, app, database); err != nil {
-		slog.Error("backup: record again after the restore", "app", app, "error", err)
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-		defer cancel()
-		if err := b.walgBase(ctx, app, database); err != nil {
-			slog.Warn("backup: base backup after the restore", "app", app, "error", err)
+	// on the new timeline right away; Record does it if Postgres does not
+	// run yet.
+	b.walgNeedsFresh(app, database, true)
+	startErr := all.startAfter(nil)
+	if startErr == nil {
+		if err := b.walgFresh(ctx, app, database); err != nil {
+			slog.Error("backup: record again after the restore", "app", app, "error", err)
+		} else {
+			b.walgNeedsFresh(app, database, false)
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+				defer cancel()
+				if err := b.walgBase(ctx, app, database); err != nil {
+					slog.Warn("backup: base backup after the restore", "app", app, "error", err)
+				}
+			}()
 		}
-	}()
-	return nil
+	}
+	return startErr
+}
+
+// enoughSpace says when the disk of the database has not room for the
+// restored data and its copy next to the live data, twice its size.
+func (e *postgresEngine) enoughSpace(ctx context.Context, target pgTarget, data pgData) error {
+	out, err := target.psql(ctx, `SELECT sum(pg_database_size(datname)) FROM pg_database;`, nil, false)
+	if err != nil {
+		return nil
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return nil
+	}
+	out, err = e.b.apps.output(ctx, "docker", "run", "--rm", "-v", data.mount, "--entrypoint", "stat", target.image, "-f", "-c", "%a %S", data.dir)
+	var blocks, blockSize int64
+	if err != nil {
+		return nil
+	}
+	if _, err := fmt.Sscan(out, &blocks, &blockSize); err != nil {
+		return nil
+	}
+	return spaceFor(2*size, blocks*blockSize)
+}
+
+// The exit codes of pgSwapScript.
+const (
+	swapUnchanged = 3
+	swapHalfway   = 4
+	swapRefused   = 5
+)
+
+// exitCode runs a command and says how it exited, with its output.
+func exitCode(ctx context.Context, name string, args ...string) (int, string, error) {
+	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode(), strings.TrimSpace(string(out)), err
+	}
+	if err != nil {
+		return -1, strings.TrimSpace(string(out)), err
+	}
+	return 0, strings.TrimSpace(string(out)), nil
 }
 
 // pgSwapScript replaces the data in the folder $0 with the restored data in
-// /restore, without ever leaving it half done unnoticed. It copies into a
-// new folder next to the data first: if that fails, nothing changed. Then
-// it moves the old data aside and the new data in, renames on one disk,
-// and moves the old data back if the first step fails. A failure after
-// that says the data is half new.
+// /restore, and never leaves it half done unnoticed. It runs in the
+// Postgres image, under dash or bash.
+//
+//   - It refuses when an earlier swap left .moin-old: that holds data.
+//   - It copies into .moin-new next to the data: if that fails, nothing
+//     changed.
+//   - It moves the live data into .moin-old and the new data in, renames on
+//     one disk. If moving aside fails it moves everything back; only when
+//     that worked too, nothing changed.
+//   - It writes $1, the restore's ID, into .moin-restored, so an agent that
+//     stopped in the middle tells a finished swap.
+//   - A cleanup that fails after a finished swap is no failure: what is
+//     left moves to .moin-trash-<time>.
+//
+// Exit 0 swapped, 3 nothing changed, 4 half the data is new, 5 refused.
 const pgSwapScript = `set -u
-d="$0"; new="$d/.moin-new"; old="$d/.moin-old"
-rm -rf "$new" "$old"
-if ! { mkdir "$new" && cp -a /restore/. "$new"/ && rm -f "$new/recovery.signal" && mkdir "$old"; }; then
-  rm -rf "$new" "$old"; echo "the copy failed, nothing changed" >&2; exit 3
+d="$0"; id="$1"; new="$d/.moin-new"; old="$d/.moin-old"
+if [ -e "$old" ]; then
+  echo "an earlier swap stopped halfway and left the data before in .moin-old: moin changes nothing until someone looked at it" >&2; exit 5
 fi
+rm -rf "$new"
+if ! { mkdir "$new" && cp -a /restore/. "$new"/ && rm -f "$new/recovery.signal" && printf '%s' "$id" > "$new/.moin-restored" && mkdir "$old"; }; then
+  rm -rf "$new"; rmdir "$old" 2>/dev/null; echo "the copy failed, nothing changed" >&2; exit 3
+fi
+aside=ok
 for f in "$d"/* "$d"/.[!.]* "$d"/..?*; do
   [ -e "$f" ] || continue
   case "$f" in "$new"|"$old") continue;; esac
-  if ! mv "$f" "$old"/; then
-    for g in "$old"/* "$old"/.[!.]* "$old"/..?*; do [ -e "$g" ] && mv "$g" "$d"/; done
-    rm -rf "$new"; rmdir "$old"; echo "moving the data aside failed, nothing changed" >&2; exit 3
-  fi
+  if ! mv "$f" "$old"/; then aside=failed; break; fi
 done
+if [ "$aside" = failed ]; then
+  back=ok
+  for g in "$old"/* "$old"/.[!.]* "$old"/..?*; do
+    [ -e "$g" ] || continue
+    mv "$g" "$d"/ || back=failed
+  done
+  if [ "$back" = ok ] && rmdir "$old"; then
+    rm -rf "$new"; echo "moving the data aside failed, nothing changed" >&2; exit 3
+  fi
+  echo "moving the data aside failed, and moving it back too: part of the data before is in .moin-old" >&2; exit 4
+fi
 for f in "$new"/* "$new"/.[!.]* "$new"/..?*; do
   [ -e "$f" ] || continue
   mv "$f" "$d"/ || { echo "the swap stopped halfway; the data before is in .moin-old" >&2; exit 4; }
 done
-rmdir "$new"; rm -rf "$old"
+rmdir "$new" 2>/dev/null
+rm -rf "$old" 2>/dev/null || mv "$old" "$d/.moin-trash-$(date +%s)" 2>/dev/null
+exit 0
 `
 
 // recoverInto runs Postgres on the data in volume until it has replayed
@@ -837,4 +950,74 @@ func otherServices(composeFile, except string) []string {
 	}
 	slices.Sort(others)
 	return others
+}
+
+// historyPendingFile holds the timeline histories a restore could not put
+// in the bucket yet, as "<key>|<file>".
+const historyPendingFile = "walg-history-pending.json"
+
+// pendHistories writes down the timeline histories in the restored data,
+// for Record to put in the bucket.
+func (b *backups) pendHistories(app string, database protocol.Database, volume string, docker func(string, []string, string, ...string) (string, error)) {
+	out, _ := docker("postgres", []string{"--entrypoint", "sh"}, volume, "-c", `cd /restore/pg_wal && ls *.history`)
+	b.journal.Lock()
+	defer b.journal.Unlock()
+	pending := b.loadSet(historyPendingFile)
+	for _, name := range strings.Fields(out) {
+		pending[key(app, database)+"|"+name] = true
+	}
+	b.saveSet(historyPendingFile, pending)
+}
+
+// historiesPending are the timeline histories of a database not in the
+// bucket yet.
+func (b *backups) historiesPending(app string, database protocol.Database) []string {
+	b.journal.Lock()
+	defer b.journal.Unlock()
+	names := []string{}
+	for item := range b.loadSet(historyPendingFile) {
+		if name, ok := strings.CutPrefix(item, key(app, database)+"|"); ok {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// pushPending puts the timeline histories a restore left in the bucket,
+// with the companion, which sees the data.
+func (b *backups) pushPending(ctx context.Context, app string, database protocol.Database) error {
+	names := b.historiesPending(app, database)
+	if len(names) == 0 {
+		return nil
+	}
+	target, err := b.apps.postgres(ctx, app, database)
+	if err != nil {
+		return fmt.Errorf("the timeline history of the last restore is not in the bucket yet: %w", err)
+	}
+	data, err := b.apps.pgDataOf(ctx, target.container)
+	if err != nil {
+		return fmt.Errorf("the timeline history of the last restore is not in the bucket yet: %w", err)
+	}
+	for _, name := range names {
+		out, err := b.apps.output(ctx, "docker", "exec", companionName(app, database.Service), "/usr/local/bin/wal-g", "wal-push", data.dir+"/pg_wal/"+name)
+		if err != nil {
+			return fmt.Errorf("the timeline history of the last restore is not in the bucket yet: %v %s", err, out)
+		}
+		b.journal.Lock()
+		pending := b.loadSet(historyPendingFile)
+		delete(pending, key(app, database)+"|"+name)
+		b.saveSet(historyPendingFile, pending)
+		b.journal.Unlock()
+	}
+	return nil
+}
+
+// walgNeedsFresh notes that a database's recording must start over after
+// a restore, or that it did.
+func (b *backups) walgNeedsFresh(app string, database protocol.Database, fresh bool) {
+	state := b.walgState(key(app, database))
+	b.walg.mu.Lock()
+	state.fresh = fresh
+	b.walg.mu.Unlock()
 }

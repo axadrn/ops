@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/axadrn/moin/internal/build"
 	"github.com/axadrn/moin/protocol"
@@ -68,7 +69,59 @@ func TestUpdateSwapsAVerifiedBinary(t *testing.T) {
 // would reach the updater, which this runner has none of.
 func TestUpdateWaitsForARestore(t *testing.T) {
 	r := &runner{pending: map[string]protocol.DeployDone{}}
-	r.busy.Add(1)
+	// A restore runs: an update is refused before it reaches the updater,
+	// which this runner has none of.
+	if !r.beginWork() {
+		t.Fatal("a restore did not start")
+	}
 	message, _ := protocol.NewMessage(protocol.TypeAgentUpdate, protocol.AgentUpdate{Version: "v9"})
 	r.agentUpdate(context.Background(), message, nil)
+	if r.updating {
+		t.Fatal("an update started while a restore runs")
+	}
+	// An update runs: no restore or deploy starts until it ends.
+	r.endWork()
+	if !r.beginUpdate() {
+		t.Fatal("an update did not start with nothing running")
+	}
+	if r.beginWork() {
+		t.Fatal("a restore started while the agent updates itself")
+	}
+	if r.beginUpdate() {
+		t.Fatal("a second update started")
+	}
+	r.endUpdate()
+	if !r.beginWork() {
+		t.Fatal("no restore after a failed update")
+	}
+	r.endWork()
+
+	// A stopping agent waits for a restore that runs.
+	r.beginWork()
+	go func() {
+		time.Sleep(1500 * time.Millisecond)
+		r.endWork()
+	}()
+	start := time.Now()
+	r.waitIdle(time.Minute)
+	if waited := time.Since(start); waited < time.Second {
+		t.Fatalf("stopped after %s while a restore ran", waited)
+	}
+}
+
+// TestRefreshUnit: an older unit, which stops the agent before a restore
+// ends, is written again; the current one stays as it is.
+func TestRefreshUnit(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "moin-agent.service")
+	os.WriteFile(file, []byte("[Service]\nExecStart=/usr/local/bin/moin agent\n"), 0o644)
+	refreshUnit(file)
+	body, _ := os.ReadFile(file)
+	if !strings.Contains(string(body), "KillMode=mixed") || !strings.Contains(string(body), "TimeoutStopSec=1800") {
+		t.Fatalf("unit %s", body)
+	}
+	missing := filepath.Join(t.TempDir(), "none.service")
+	refreshUnit(missing)
+	if _, err := os.Stat(missing); err == nil {
+		t.Fatal("a unit was written where none was")
+	}
 }

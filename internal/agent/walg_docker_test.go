@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -224,10 +225,12 @@ func TestPostgresGoBack(t *testing.T) {
 	}
 	before := histories()
 	stoppedForCopy := false
-	err = e.GoBack(ctx, moment{At: beforeFirst}, func() error {
+	b.keepHook = func() (string, error) {
 		stoppedForCopy = !webRuns()
-		return errors.New("injected")
-	})
+		return "", errors.New("injected")
+	}
+	err = b.restore(ctx, protocol.BackupRestore{ID: "failed-copy", App: app, Database: database.Path, At: &beforeFirst})
+	b.keepHook = nil
 	if err == nil || !strings.Contains(err.Error(), "nothing changed") || !stoppedForCopy || !webRuns() {
 		t.Fatalf("a restore that fails after the recovery: %v, web stopped for the copy %v, runs %v", err, stoppedForCopy, webRuns())
 	}
@@ -243,6 +246,36 @@ func TestPostgresGoBack(t *testing.T) {
 	sql(`INSERT INTO orders VALUES (8, 'T5');`)
 	flush()
 	goBack(protocol.BackupRestore{At: &afterT4}, "1:T1,2:T1,7:T4")
+	// The new timeline's history was in the bucket before Postgres wrote a
+	// thing on it.
+	if after := histories(); after != before+1 {
+		t.Fatalf("histories after the restore: %d, want %d", after, before+1)
+	}
+
+	// A history the restore could not put in the bucket: the backup says
+	// so, a restore waits, and Record puts it there with the companion.
+	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(time.Second) {
+		out, _ := a.output(ctx, "docker", "inspect", "-f", "{{.State.Running}}", companionName(app, "db"))
+		if strings.TrimSpace(out) == "true" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no companion after the restore")
+		}
+	}
+	timeline := sql(`SELECT timeline_id FROM pg_control_checkpoint();`)
+	name := fmt.Sprintf("%08X.history", mustAtoi(t, timeline))
+	b.pendHistories(app, database, "", func(string, []string, string, ...string) (string, error) { return name, nil })
+	err = b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &afterT4})
+	if err == nil || !strings.Contains(err.Error(), "not in the bucket yet") {
+		t.Fatalf("a restore while a history is pending: %v", err)
+	}
+	if err := e.Record(ctx); err != nil {
+		t.Fatalf("Record with a pending history: %v", err)
+	}
+	if pending := b.historiesPending(app, database); len(pending) != 0 {
+		t.Fatalf("still pending: %v", pending)
+	}
 	if !webRuns() {
 		t.Fatal("web does not run after the restore")
 	}
@@ -399,4 +432,13 @@ func TestPostgresGoBack(t *testing.T) {
 			t.Errorf("volumes left: %s", out)
 		}
 	}
+}
+
+func mustAtoi(t *testing.T, text string) int {
+	t.Helper()
+	n, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

@@ -84,6 +84,9 @@ type walgState struct {
 	broke, rebased time.Time
 	// why says how it broke.
 	why string
+	// fresh says a restore swapped the data and recording must start
+	// over on it.
+	fresh bool
 }
 
 // walg runs the companions and remembers their state.

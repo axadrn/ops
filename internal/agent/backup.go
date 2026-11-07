@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"syscall"
+
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/axadrn/moin/internal/human"
 	"io"
 	"log/slog"
 	"os"
@@ -53,7 +56,7 @@ type engine interface {
 	// GoBack puts the database back to a moment, or to a full copy. It
 	// calls keep, which takes the one copy of the database as it is,
 	// right before it replaces anything.
-	GoBack(ctx context.Context, to moment, keep func() error) error
+	GoBack(ctx context.Context, to moment, run *restoreRun) error
 	// Check restores the newest state of the history into a throwaway
 	// copy and verifies it; errNothingYet while the history is empty.
 	Check(ctx context.Context) error
@@ -131,6 +134,11 @@ type backups struct {
 	// again.
 	restoring  map[string]bool
 	clearFirst map[string]bool
+	// journal keeps the files of the restore journal whole; see
+	// backup_journal.go.
+	journal sync.Mutex
+	// keepHook replaces the copy before a restore in tests.
+	keepHook func() (string, error)
 }
 
 // check is the newest daily check of a database.
@@ -140,8 +148,16 @@ type check struct {
 }
 
 func newBackups(a *apps, send func(protocol.MessageType, string, any)) *backups {
-	return &backups{apps: a, send: send, watched: map[string]watched{}, checked: map[string]check{}}
+	b := &backups{apps: a, send: send, watched: map[string]watched{}, checked: map[string]check{}}
+	// A restore that swapped a file before the agent stopped still has
+	// the history from before to clear.
+	b.clearFirst = b.loadSet(clearFirstFile)
+	return b
 }
+
+// clearFirstFile holds the SQLite files whose history from before a
+// restore must go before Record follows them again.
+const clearFirstFile = "backup-clear-first.json"
 
 // engine is the engine of a database.
 func (b *backups) engine(app string, database protocol.Database) engine {
@@ -462,7 +478,7 @@ func (r *runner) backupList(ctx context.Context, message protocol.Message) {
 // list reports the backups of an app: the history of each database, its
 // copies before restores and its newest daily check.
 func (b *backups) list(ctx context.Context, request protocol.BackupRequest) (protocol.Backups, error) {
-	result := protocol.Backups{App: request.App, Databases: []protocol.DatabaseBackup{}}
+	result := protocol.Backups{App: request.App, Databases: []protocol.DatabaseBackup{}, Restores: b.restoreStates(request.App)}
 	if _, err := b.ready(); err != nil {
 		return result, err
 	}
@@ -518,8 +534,11 @@ func (r *runner) backupRestore(ctx context.Context, message protocol.Message) {
 		return
 	}
 	// An update waits for it, as for a deploy.
-	r.busy.Add(1)
-	defer r.busy.Add(-1)
+	if !r.beginWork() {
+		r.fail(message, errUpdating)
+		return
+	}
+	defer r.endWork()
 	if err := r.backups.restore(ctx, request); err != nil {
 		r.fail(message, err)
 		return
@@ -567,22 +586,38 @@ func (b *backups) restore(ctx context.Context, request protocol.BackupRestore) e
 	b.restoring[k] = true
 	b.mu.Unlock()
 	e := b.engine(request.App, database)
-	kept := ""
-	// Once the app stops, the restore ends what it started even when the
-	// agent shuts down: an update waits for it, a stop does not cut it.
-	err = e.GoBack(ctx, to, func() error {
-		id, err := b.keepCopy(context.WithoutCancel(ctx), request.App, database, e)
-		kept = id
-		return err
-	})
+	// The restore writes down where it is, so an agent that stops in the
+	// middle ends it when it starts again (recoverRestores).
+	run := &restoreRun{b: b, mark: restoreMark{ID: request.ID, App: request.App, Database: database.Path, Postgres: database.Postgres(), StartedAt: time.Now().UTC()}}
+	run.keepCopy = func() (string, error) {
+		if b.keepHook != nil {
+			return b.keepHook()
+		}
+		return b.keepCopy(context.WithoutCancel(ctx), request.App, database, e)
+	}
+	run.step(stepPreparing)
+	err = e.GoBack(ctx, to, run)
 	b.mu.Lock()
 	delete(b.restoring, k)
 	b.mu.Unlock()
 	b.reconcile()
+	result := restoreResult{ID: request.ID, App: request.App, Database: database.Path, State: protocol.RestoreDone, FinishedAt: time.Now().UTC()}
+	if err != nil && run.mark.Copy != "" {
+		err = fmt.Errorf("%w. The copy from before is undo-%s: going back to it puts the data back as it was", err, run.mark.Copy)
+	}
 	if err != nil {
-		if kept != "" {
-			return fmt.Errorf("%w. The copy from before is undo-%s: going back to it puts the data back as it was", err, kept)
-		}
+		result.State, result.Error = protocol.RestoreFailed, err.Error()
+	}
+	b.saveResult(result)
+	b.dropMark(request.App, database.Path)
+	// The control plane may have lost the session meanwhile: it learns
+	// how the restore ended here, or from the next list.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		b.send(protocol.TypeBackupStatus, "", protocol.Backups{App: request.App, Databases: []protocol.DatabaseBackup{b.status(ctx, request.App, database, false)}, Restores: b.restoreStates(request.App)})
+	}()
+	if err != nil {
 		return err
 	}
 	slog.Info("backup: restored", "app", request.App, "database", database.Path, "at", request.At, "copy", request.Copy)
@@ -906,7 +941,9 @@ func (a *apps) stopper(ctx context.Context, app string, services ...string) *app
 // stop stops the services. When that fails it starts them again and says
 // nothing changed.
 func (s *appStop) stop() error {
-	err := s.a.compose(s.ctx, s.app, s.composeFile, func(string, ...any) {}, append([]string{"stop"}, s.services...)...)
+	ctx, cancel := context.WithTimeout(s.ctx, composeTimeout)
+	defer cancel()
+	err := s.a.compose(ctx, s.app, s.composeFile, func(string, ...any) {}, append([]string{"stop"}, s.services...)...)
 	if err != nil {
 		return s.startAfter(fmt.Errorf("stop the app: %w; nothing changed", err))
 	}
@@ -915,7 +952,9 @@ func (s *appStop) stop() error {
 
 // startAfter starts the services again and adds a failure of that to err.
 func (s *appStop) startAfter(err error) error {
-	startErr := s.a.compose(s.ctx, s.app, s.composeFile, func(string, ...any) {}, append([]string{"start"}, s.services...)...)
+	ctx, cancel := context.WithTimeout(s.ctx, composeTimeout)
+	defer cancel()
+	startErr := s.a.compose(ctx, s.app, s.composeFile, func(string, ...any) {}, append([]string{"start"}, s.services...)...)
 	if startErr != nil {
 		startErr = fmt.Errorf("start the app again: %w", startErr)
 		if err == nil {
@@ -924,4 +963,35 @@ func (s *appStop) startAfter(err error) error {
 		return fmt.Errorf("%w; %w", err, startErr)
 	}
 	return err
+}
+
+// The longest a step of a restore may take once the app stopped: no hung
+// step keeps the app stopped or its lock held for good. They are generous,
+// for databases of many gigabytes on slow disks.
+const (
+	composeTimeout = 10 * time.Minute
+	swapTimeout    = 6 * time.Hour
+	dumpTimeout    = 6 * time.Hour
+)
+
+// spareSpace is what a disk keeps free beyond what a restore needs.
+const spareSpace = 512 << 20
+
+// enoughSpace says in one sentence when the disk of dir has less than
+// need free, plus some to spare.
+func enoughSpace(dir string, need int64) error {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dir, &stat); err != nil {
+		return nil
+	}
+	return spaceFor(need, int64(stat.Bavail)*int64(stat.Bsize))
+}
+
+// spaceFor says in one sentence when free is less than need plus some to
+// spare.
+func spaceFor(need, free int64) error {
+	if free >= need+spareSpace {
+		return nil
+	}
+	return fmt.Errorf("the restore needs about %s free on the server's disk and there is %s: free some space first, nothing changed", human.Size(float64(need+spareSpace)), human.Size(float64(free)))
 }

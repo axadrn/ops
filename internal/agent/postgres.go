@@ -679,5 +679,7 @@ func (t pgTarget) restoreDump(ctx context.Context, file string) error {
 		return err
 	}
 	defer in.Close()
-	return t.exec(ctx, in, io.Discard, "pg_restore", "--clean", "--if-exists", "--no-owner", "--single-transaction", "--exit-on-error", "-h", pgSocket, "-U", t.user, "-d", t.database)
+	// A lock it cannot get within a minute fails the restore instead of
+	// waiting for good: the app's other services are stopped meanwhile.
+	return t.exec(ctx, in, io.Discard, "env", "PGOPTIONS=-c lock_timeout=60s", "pg_restore", "--clean", "--if-exists", "--no-owner", "--single-transaction", "--exit-on-error", "-h", pgSocket, "-U", t.user, "-d", t.database)
 }

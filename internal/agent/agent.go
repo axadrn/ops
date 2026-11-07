@@ -13,11 +13,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/axadrn/moin/internal/build"
@@ -161,6 +161,15 @@ func Run(ctx context.Context, dir string, state State) error {
 	agent.security = newSecurity(dir, agent.apps)
 	agent.apps.proxyMode = agent.security.proxyMode
 	agent.updater = newUpdater(state.URL)
+	// A restore the agent stopped in the middle of ends first: the app
+	// runs again, or stays stopped on half new data, and says so.
+	agent.backups.recoverRestores(ctx)
+	if agent.updater.systemd != "" {
+		refreshUnit(unitFile)
+	}
+	// systemd stops the agent with a signal: a deploy or a restore that
+	// runs ends first, within a bound (TimeoutStopSec of the unit).
+	defer agent.waitIdle(stopWait)
 	go agent.backups.recordLoop(ctx)
 	go agent.backups.checks(ctx)
 	go agent.backups.health(ctx)
@@ -204,9 +213,12 @@ type runner struct {
 	backups   *backups
 	security  *security
 	updater   *updater
-	// busy counts the deploys and restores that run now; an update waits
-	// for them.
-	busy atomic.Int32
+	// work counts the deploys and restores that run now, and updating is
+	// set once an update starts: an update waits for the work, and no
+	// work starts while the agent replaces itself. See beginWork.
+	workMu   sync.Mutex
+	work     int
+	updating bool
 
 	mu   sync.Mutex
 	conn *websocket.Conn
@@ -448,4 +460,73 @@ func websocketURL(raw string) (string, error) {
 		return "", fmt.Errorf("control plane URL must start with http:// or https://, got %q", raw)
 	}
 	return parsed.String(), nil
+}
+
+// stopWait is how long a stopping agent waits for the deploys and restores
+// that run; the unit gives it a little longer (protocol.AgentUnit).
+const stopWait = 25 * time.Minute
+
+// beginWork starts a deploy or a restore, unless the agent is updating
+// itself. endWork ends it.
+func (r *runner) beginWork() bool {
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	if r.updating {
+		return false
+	}
+	r.work++
+	return true
+}
+
+func (r *runner) endWork() {
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	r.work--
+}
+
+// beginUpdate starts an update when no deploy or restore runs; from then
+// on none starts. endUpdate ends an update that failed.
+func (r *runner) beginUpdate() bool {
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	if r.work > 0 || r.updating {
+		return false
+	}
+	r.updating = true
+	return true
+}
+
+func (r *runner) endUpdate() {
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	r.updating = false
+}
+
+// waitIdle waits until no deploy or restore runs, at most limit.
+func (r *runner) waitIdle(limit time.Duration) {
+	for deadline := time.Now().Add(limit); time.Now().Before(deadline); time.Sleep(time.Second) {
+		r.workMu.Lock()
+		work := r.work
+		r.workMu.Unlock()
+		if work == 0 {
+			return
+		}
+		slog.Info("waiting for a deploy or a restore to end before stopping", "running", work)
+	}
+}
+
+// refreshUnit writes the agent's systemd unit again when an older agent
+// wrote another, such as one that stops the agent before a restore ends.
+// It takes effect at the next start.
+func refreshUnit(file string) {
+	body, err := os.ReadFile(file)
+	want := protocol.AgentUnit(build.Name)
+	if err != nil || string(body) == want {
+		return
+	}
+	if err := os.WriteFile(file, []byte(want), 0o644); err != nil {
+		slog.Warn("refresh the systemd unit", "error", err)
+		return
+	}
+	_ = exec.Command("systemctl", "daemon-reload").Run()
 }

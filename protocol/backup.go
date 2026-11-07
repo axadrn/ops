@@ -48,7 +48,29 @@ type BackupRequest struct {
 type Backups struct {
 	App       string           `json:"app"`
 	Databases []DatabaseBackup `json:"databases"`
+	// Restores are the restores of the app's databases that run now, and
+	// how the last one of each ended, by the ID the control plane gave
+	// it. A restore outlives a session, so the control plane learns here
+	// how one ended that it lost track of. Agents before it send none.
+	Restores []RestoreState `json:"restores,omitempty"`
 }
+
+// RestoreState is how a restore stands on the server: running, done or
+// failed with Error.
+type RestoreState struct {
+	ID         string     `json:"id"`
+	Database   string     `json:"database"`
+	State      string     `json:"state"`
+	Error      string     `json:"error,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// The states of a RestoreState.
+const (
+	RestoreRunning = "running"
+	RestoreDone    = "done"
+	RestoreFailed  = "failed"
+)
 
 // DatabaseBackup is how one database is backed up. Since is the oldest
 // moment a restore can go back to, ReplicatedAt the newest change in the
@@ -87,6 +109,9 @@ type Copy struct {
 // this restore can be undone too. The app stops for the swap and starts
 // again.
 type BackupRestore struct {
+	// ID is the control plane's name for the restore, which the agent
+	// reports it under; agents before it ignore it.
+	ID       string     `json:"id,omitempty"`
 	App      string     `json:"app"`
 	Database string     `json:"database,omitempty"`
 	At       *time.Time `json:"at,omitempty"`

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -164,20 +165,48 @@ func (c *Client) Restore(ctx context.Context, app, database, moment string, at *
 	if err := c.do(ctx, http.MethodPost, appPath(app, "restores"), body, &restore); err != nil {
 		return err
 	}
-	for restore.State == "running" {
+	// It runs, or its server went offline during it (unknown) and tells
+	// how it ended when it is back. A control plane that restarts or a
+	// network that drops for a while is no failure: it asks again.
+	failures := 0
+	for restore.State == "running" || restore.State == "unknown" {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(restorePoll):
 		}
-		if err := c.do(ctx, http.MethodGet, appPath(app, "restores/"+url.PathEscape(restore.ID)), nil, &restore); err != nil {
+		var next Restore
+		err := c.do(ctx, http.MethodGet, appPath(app, "restores/"+url.PathEscape(restore.ID)), nil, &next)
+		if err != nil && !transient(err) {
 			return err
 		}
+		if err != nil {
+			failures++
+			if failures > restoreRetries {
+				return fmt.Errorf("the control plane does not answer how the restore %s stands: %w; moin backups %s shows it once it does", restore.ID, err, app)
+			}
+			continue
+		}
+		failures, restore = 0, next
 	}
 	if restore.State != "done" {
 		return fmt.Errorf("the restore failed: %s", restore.Error)
 	}
 	return nil
+}
+
+// restoreRetries is how often in a row Restore asks again when the
+// control plane does not answer.
+var restoreRetries = 300
+
+// transient says an error may go away when asked again: no answer, or
+// an answer of a control plane that restarts.
+func transient(err error) bool {
+	var apiErr *Error
+	if errors.As(err, &apiErr) {
+		return apiErr.Status >= 500 || apiErr.Status == http.StatusTooManyRequests
+	}
+	return true
 }
 
 // restorePoll is how often Restore asks how a restore stands.

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/axadrn/moin/protocol"
 )
 
@@ -64,22 +66,64 @@ func TestSQLiteGoBack(t *testing.T) {
 		t.Fatalf("before the restore: %s", got)
 	}
 
-	// The app stops before the copy of now, so no write comes after it; a
-	// copy that fails starts the app again and changes nothing.
+	// Through the real restore: the app stops before the copy of now, so
+	// no write comes after it; the restore writes its step down; Record
+	// leaves the file alone meanwhile. A copy that fails starts the app
+	// again, changes nothing, and the result says so under its ID.
 	runningNow := func() bool {
 		out, _ := a.output(ctx, "docker", "compose", "-p", project(app), "-f", composeFile, "ps", "-q", "--status", "running")
 		return strings.TrimSpace(out) != ""
 	}
-	stoppedForCopy := false
-	err := b.engine(app, database).GoBack(ctx, moment{At: noted}, func() error {
+	litestreamObjects := func() int {
+		_, prefix, _ := b.bucketOf(app, database)
+		list, _ := s3Client(bucket).ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(prefix + "/litestream/")})
+		return len(list.Contents)
+	}
+	stoppedForCopy, followed, step := false, true, ""
+	b.keepHook = func() (string, error) {
 		stoppedForCopy = !runningNow()
-		return errors.New("injected")
-	})
+		b.recordAll(ctx)
+		b.mu.Lock()
+		_, followed = b.watched[file]
+		b.mu.Unlock()
+		for _, mark := range b.marks() {
+			if mark.ID == "failed-copy" {
+				step = mark.Step
+			}
+		}
+		return "", errors.New("injected")
+	}
+	err := b.restore(ctx, protocol.BackupRestore{ID: "failed-copy", App: app, Database: database.Path, At: &noted})
 	if err == nil || !strings.Contains(err.Error(), "nothing changed") || !stoppedForCopy || !runningNow() {
 		t.Fatalf("a failed copy: %v, stopped for the copy %v, runs %v", err, stoppedForCopy, runningNow())
 	}
+	if followed || step != stepStopped {
+		t.Fatalf("during the restore: Record followed the file %v, step %q", followed, step)
+	}
 	if got := rows(); got != "b,c,d" {
 		t.Fatalf("after a failed copy: %s", got)
+	}
+	if states := b.restoreStates(app); len(states) != 1 || states[0].ID != "failed-copy" || states[0].State != protocol.RestoreFailed || len(b.marks()) != 0 {
+		t.Fatalf("restore states %+v, marks %+v", states, b.marks())
+	}
+
+	// A swap that fails changes nothing, also not the history in the
+	// bucket: nothing is cleared, now or later.
+	before := litestreamObjects()
+	b.keepHook = func() (string, error) {
+		return "", os.Remove(file + "." + ourName + "-restore")
+	}
+	err = b.restore(ctx, protocol.BackupRestore{ID: "failed-swap", App: app, Database: database.Path, At: &noted})
+	b.keepHook = nil
+	if err == nil || !strings.Contains(err.Error(), "swap the database") || !strings.Contains(err.Error(), "nothing changed") || !runningNow() {
+		t.Fatalf("a failed swap: %v, runs %v", err, runningNow())
+	}
+	if got := rows(); got != "b,c,d" {
+		t.Fatalf("after a failed swap: %s", got)
+	}
+	b.recordAll(ctx)
+	if after := litestreamObjects(); after < before || b.clearFirst[file] || b.loadSet(clearFirstFile)[file] {
+		t.Fatalf("a failed swap touched the history: %d objects before, %d after, clear first %v", before, after, b.clearFirst)
 	}
 
 	if err := b.restore(ctx, protocol.BackupRestore{App: app, Database: database.Path, At: &noted}); err != nil {
@@ -138,6 +182,55 @@ func TestSQLiteGoBack(t *testing.T) {
 	}
 	if _, err := os.Stat(file + "." + ourName + "-restore"); err == nil {
 		t.Error("the restored file was left behind")
+	}
+
+	// The bucket is out of reach right after the swap, and the agent
+	// restarts before it could clear the old history: the new agent
+	// clears it before it follows the file again.
+	_, prefix, _ := b.bucketOf(app, database)
+	fromBefore := prefix + "/litestream/from-before"
+	if _, err := s3Client(bucket).PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucketName), Key: aws.String(fromBefore), Body: strings.NewReader("x")}); err != nil {
+		t.Fatal(err)
+	}
+	b.keepHook = func() (string, error) {
+		gone := *bucket
+		gone.Endpoint = "http://127.0.0.1:1"
+		b.mu.Lock()
+		b.defaultBucket = &gone
+		b.mu.Unlock()
+		return "", nil
+	}
+	db.Exec(`INSERT INTO notes (body) VALUES ('f')`)
+	waitRecorded(t, b.engine(app, database), time.Now().Add(-time.Second))
+	latest := time.Now().UTC()
+	if err := b.restore(ctx, protocol.BackupRestore{ID: "bucket-gone", App: app, Database: database.Path, At: &latest}); err != nil {
+		t.Fatalf("restore with the bucket out of reach: %v", err)
+	}
+	if !b.loadSet(clearFirstFile)[file] {
+		t.Fatal("the history to clear is not written down")
+	}
+	// Meanwhile Record does not follow the file, and the backup says why.
+	b.mu.Lock()
+	_, followed = b.watched[file]
+	why := b.failures[key(app, database)].why
+	b.mu.Unlock()
+	if followed || !strings.Contains(why, "clear the history from before the restore") {
+		t.Fatalf("with the history from before not cleared: followed %v, problem %q", followed, why)
+	}
+	b.configure(ctx, nil, nil)
+	restarted := newBackups(a, func(protocol.MessageType, string, any) {})
+	if !restarted.clearFirst[file] {
+		t.Fatal("the restarted agent does not know the history to clear")
+	}
+	if err := restarted.configure(ctx, bucket, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.configure(ctx, nil, nil)
+	if _, err := s3Client(bucket).HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucketName), Key: aws.String(fromBefore)}); err == nil {
+		t.Fatal("the history from before the restore is still there")
+	}
+	if _, ok := restarted.watched[file]; !ok || restarted.loadSet(clearFirstFile)[file] {
+		t.Fatalf("the restarted agent does not follow the file: watched %v", restarted.watched)
 	}
 }
 

@@ -65,6 +65,7 @@ func (e *sqliteEngine) Record(ctx context.Context) error {
 		}
 		b.mu.Lock()
 		delete(b.clearFirst, hostPath)
+		b.saveSet(clearFirstFile, b.clearFirst)
 		b.mu.Unlock()
 		return e.Record(ctx)
 	}
@@ -124,8 +125,12 @@ func (e *sqliteEngine) Record(ctx context.Context) error {
 // database and checks it. Only then it stops the app, keeps the copy of
 // now, swaps the file in and starts the app again. The history starts
 // over from the restored file: the copy of now is how to undo it.
-func (e *sqliteEngine) GoBack(ctx context.Context, to moment, keep func() error) error {
+func (e *sqliteEngine) GoBack(ctx context.Context, to moment, run *restoreRun) error {
 	b, hostPath := e.b, e.database.HostPath
+	// The restored file and the copy of now sit next to the file.
+	if err := enoughSpace(filepath.Dir(hostPath), 2*fileSize(hostPath)); err != nil {
+		return err
+	}
 	restored := hostPath + "." + ourName + "-restore"
 	removeDatabase(restored)
 	defer removeDatabase(restored)
@@ -147,37 +152,64 @@ func (e *sqliteEngine) GoBack(ctx context.Context, to moment, keep func() error)
 	if err := app.stop(); err != nil {
 		return err
 	}
-	if err := keep(); err != nil {
-		return app.startAfter(fmt.Errorf("%w; nothing changed", err))
-	}
-	ctx = context.WithoutCancel(ctx)
+	run.step(stepStopped)
+	// Litestream lets go of the file, with what the app wrote last; Record
+	// leaves it alone until the restore ends (b.restoring).
 	b.mu.Lock()
 	if b.store != nil {
-		_ = b.store.UnregisterDB(ctx, hostPath)
+		_ = b.store.UnregisterDB(context.WithoutCancel(ctx), hostPath)
 	}
 	delete(b.watched, hostPath)
-	if b.clearFirst == nil {
-		b.clearFirst = map[string]bool{}
-	}
-	b.clearFirst[hostPath] = true
-	bucket, prefix, prefixErr := b.bucketOfLocked(e.app, e.database)
 	b.mu.Unlock()
+	if err := run.keep(); err != nil {
+		return app.startAfter(fmt.Errorf("%w; nothing changed", err))
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), swapTimeout)
+	defer cancel()
 	if err := swapDatabase(restored, hostPath); err != nil {
-		return app.startAfter(fmt.Errorf("swap the database: %w", err))
+		// The file before is in place, with its history: nothing to clear.
+		return app.startAfter(fmt.Errorf("swap the database: %w; nothing changed", err))
 	}
 	// The history in the bucket belongs to the file before; Litestream
-	// starts it again from the restored one. If the bucket is out of
-	// reach now, Record clears it before it follows the file again.
+	// starts it again from the restored one. Written down first, so it
+	// is cleared before Record follows the file again, also after the
+	// agent restarted.
+	b.mu.Lock()
+	b.clearFirst[hostPath] = true
+	b.saveSet(clearFirstFile, b.clearFirst)
+	bucket, prefix, prefixErr := b.bucketOfLocked(e.app, e.database)
+	b.mu.Unlock()
+	run.step(stepSwapped)
+	// The app starts first: a bucket out of reach must not keep it stopped.
+	startErr := app.startAfter(nil)
 	if prefixErr == nil {
-		if err := replicaClientAt(bucket, prefix).DeleteAll(ctx); err != nil {
-			slog.Warn("backup: clear the history from before the restore", "error", err)
+		clearCtx, cancel := context.WithTimeout(ctx, clearTimeout)
+		defer cancel()
+		if err := replicaClientAt(bucket, prefix).DeleteAll(clearCtx); err != nil {
+			slog.Warn("backup: clear the history from before the restore; Record tries again", "error", err)
 		} else {
 			b.mu.Lock()
 			delete(b.clearFirst, hostPath)
+			b.saveSet(clearFirstFile, b.clearFirst)
 			b.mu.Unlock()
 		}
 	}
-	return app.startAfter(nil)
+	return startErr
+}
+
+// clearTimeout bounds clearing the history from before a restore right
+// after it; Record tries again every minute.
+const clearTimeout = 30 * time.Second
+
+// fileSize is the size of a SQLite file with its -wal file.
+func fileSize(hostPath string) int64 {
+	var size int64
+	for _, suffix := range []string{"", "-wal"} {
+		if info, err := os.Stat(hostPath + suffix); err == nil {
+			size += info.Size()
+		}
+	}
+	return size
 }
 
 // restoreTo restores the history as it was at a moment into target.
@@ -414,29 +446,51 @@ func gunzipFile(source, target string) error {
 }
 
 // swapDatabase moves the restored file into place with the owner and mode
-// of the database it replaces.
+// of the database it replaces. The -wal, -shm and -journal files of the
+// file before and Litestream's state of it move aside first, since next to
+// the new file they would count as its own; when the swap fails they come
+// back, and the file before is as it was.
 func swapDatabase(restored, target string) error {
 	info, err := os.Stat(target)
 	if err != nil {
 		return err
 	}
-	err = os.Chmod(restored, info.Mode().Perm())
-	if err != nil {
+	if err := os.Chmod(restored, info.Mode().Perm()); err != nil {
 		return err
 	}
 	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
-		_ = os.Remove(target + suffix)
 		_ = os.Remove(restored + suffix)
 	}
-	// Litestream keeps its position in the old file next to it; the new
-	// file starts over.
-	_ = os.RemoveAll(litestreamState(target))
-	err = os.Rename(restored, target)
-	if err != nil {
+	aside := []string{}
+	for _, file := range []string{target + "-wal", target + "-shm", target + "-journal", litestreamState(target)} {
+		if _, err := os.Lstat(file); err != nil {
+			continue
+		}
+		if err := os.Rename(file, file+asideSuffix); err != nil {
+			putBack(aside)
+			return err
+		}
+		aside = append(aside, file)
+	}
+	if err := os.Rename(restored, target); err != nil {
+		putBack(aside)
 		return err
+	}
+	for _, file := range aside {
+		_ = os.RemoveAll(file + asideSuffix)
 	}
 	matchOwnerOf(target, info)
 	return nil
+}
+
+// asideSuffix marks the files of a database moved aside for a swap.
+const asideSuffix = "." + ourName + "-before"
+
+// putBack moves files moved aside back.
+func putBack(aside []string) {
+	for _, file := range aside {
+		_ = os.Rename(file+asideSuffix, file)
+	}
 }
 
 // removeDatabase removes a database file with its -wal and -shm files.
