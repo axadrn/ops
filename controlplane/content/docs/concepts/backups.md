@@ -63,6 +63,7 @@ A `snapshots/` folder is from moin before the history: moin no longer reads it. 
 | `litestream/`, `walg/` | every change of the last 7 days | the agent, with Litestream's and WAL-G's own cleanup |
 | `before-restore/` | 7 days | the agent, once an hour |
 | a Postgres volume from before a restore, on your server | 7 days | the agent, once an hour; a folder of the server stays |
+| the restored Postgres volume of an app you removed | 7 days | the agent, once an hour |
 | `downloads/` | a day | the agent, once an hour |
 | `uploads/` | until the server has it, a day at most | the agent: right after the download, and once an hour |
 | `snapshots/` from before | until you delete it | you: moin no longer reads it |
@@ -98,7 +99,7 @@ The agent on your server does it all, with two tools: [Litestream](https://lites
   Postgres  stop ─ write down "db runs on the new volume" ─ start: compose puts it there
   ```
 
-  An agent killed at any point leaves a whole database, the one before or the restored one, never half of one. A small note in the agent's state folder says a restore stopped the app; when the agent starts again it starts the app and says which of the two it runs on. moin writes the restored volume into the app's compose file each time it starts the app, also for a deploy or a rollback. Postgres starts a new timeline with each restore, and moin notes in `timelines.json` which one ran since when, so you can go back to any moment before a restore and after an undo. SQLite's history starts again from the restored file; the copy before the restore is the way back.
+  An agent killed at any point leaves a whole database, the one before or the restored one, never half of one. A small note in the agent's state folder says a restore stopped the app and names the volume it built; when the agent starts again it starts the app, says which of the two it runs on, and removes that volume when the switch did not happen. A volume a database ran on carries a mark, and moin removes a volume only when its own notes say so: one it cannot account for, or any while its notes cannot be read, stays. moin writes the restored volume into the app's compose file each time it starts the app, also for a deploy or a rollback. Postgres starts a new timeline with each restore, and moin notes in `timelines.json` which one ran since when, so you can go back to any moment before a restore and after an undo. SQLite's history starts again from the restored file; the copy before the restore is the way back.
 - **Check** restores the newest state into a throwaway copy. SQLite: Litestream restores it into a temp file, then `PRAGMA integrity_check`. Postgres: WAL-G fetches the newest base backup and the log after it, then a throwaway Postgres of the same image, with no network, replays it all, and moin checks that every table of the live database came back and reads.
 - **Download** makes a full copy: SQLite with `VACUUM INTO`, gzipped; Postgres with `pg_dump -Fc`. It goes to `downloads/` in your bucket.
 
