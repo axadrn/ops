@@ -89,10 +89,10 @@ func runCLI(t *testing.T, api *fakeAPI, args ...string) (code int, stdout, stder
 func TestAppAsArgumentOrFlagAnywhere(t *testing.T) {
 	env := `{"items":{"KEY":"secret"}}`
 	for _, args := range [][]string{
-		{"env", "shop", "--show"},
+		{"env", "--show", "shop"},
 		{"env", "--show", "--app", "shop"},
 		{"env", "--app", "shop", "--show"},
-		{"env", "ls", "shop", "--show"},
+		{"env", "shop", "--show"},
 	} {
 		api := &fakeAPI{answers: map[string]string{"GET /api/v1/apps/shop/env": env}}
 		code, stdout, stderr := runCLI(t, api, args...)
@@ -445,11 +445,29 @@ func TestBadNamesStayLocal(t *testing.T) {
 	}
 }
 
-// moin apps shop and moin app shop show one app; a typo says what exists.
+// Every command has one name: the old aliases are unknown commands now.
+func TestOneNamePerCommand(t *testing.T) {
+	for _, args := range [][]string{
+		{"app", "shop"},
+		{"servers", "ls"},
+		{"servers", "remove", "web-1"},
+		{"buckets", "ls"},
+		{"registry", "add", "ghcr.io", "me"},
+		{"alerts", "remove", "ops"},
+	} {
+		api := &fakeAPI{}
+		code, _, stderr := runCLI(t, api, args...)
+		if code != 1 || !strings.Contains(stderr, "nknown command") && !strings.Contains(stderr, "Usage") {
+			t.Errorf("%v: code %d, stderr %q", args, code, stderr)
+		}
+	}
+}
+
+// moin apps shop shows one app; a typo says what exists.
 func TestAppsWithANameShowsTheApp(t *testing.T) {
 	detail := `{"app":{"name":"shop","server_name":"web-1","latest_number":2,"latest_status":"succeeded","live_number":2,"domains":[],"repo":"me/shop","branch":"main","auto_deploy":true},
 		"deploys":[{"number":2,"status":"succeeded","detected":{"kind":"compose","service":"web","port":8080,"databases":[],"domains":["shop.de"],"config":{"domains":["shop.de"]}}}]}`
-	for _, args := range [][]string{{"apps", "shop"}, {"app", "shop"}} {
+	for _, args := range [][]string{{"apps", "shop"}} {
 		api := &fakeAPI{answers: map[string]string{"GET /api/v1/apps/shop": detail}}
 		code, stdout, stderr := runCLI(t, api, args...)
 		if code != 0 || !strings.Contains(stdout, "web-1") || !strings.Contains(stdout, "shop.de, from compose.yml") || !strings.Contains(stdout, "me/shop, branch main, auto deploy on") || !strings.Contains(stdout, "v2") {

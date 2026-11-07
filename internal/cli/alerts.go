@@ -22,7 +22,7 @@ func alerts(ctx context.Context, args []string, stdin io.Reader, stdout io.Write
 	switch command {
 	case "add":
 		return addAlertDestination(ctx, args, stdin, stdout)
-	case "rm", "remove":
+	case "rm":
 		return removeAlertDestination(ctx, args, stdin, stdout)
 	case "test":
 		return testAlertDestination(ctx, args, stdout)

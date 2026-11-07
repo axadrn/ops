@@ -17,8 +17,8 @@ import (
 
 // db shows an app's database, SQLite or Postgres: its tables, or a page of rows.
 func db(ctx context.Context, args []string, stdout io.Writer) error {
-	command := "tables"
-	if len(args) > 0 && slices.Contains([]string{"tables", "ls", "rows", "schema"}, args[0]) {
+	command := ""
+	if len(args) > 0 && slices.Contains([]string{"rows", "schema"}, args[0]) {
 		command, args = args[0], args[1:]
 	}
 	usage := map[string]string{
@@ -28,7 +28,7 @@ func db(ctx context.Context, args []string, stdout io.Writer) error {
 	if usage == "" {
 		usage = "db [--db <path>] [app]"
 	}
-	flags := newFlags("db "+command, usage).withApp()
+	flags := newFlags(strings.TrimSpace("db "+command), usage).withApp()
 	database := flags.String("db", "", "database path in the container; default the first")
 	limit, offset := new(int), new(int)
 	if command == "rows" {
@@ -41,7 +41,7 @@ func db(ctx context.Context, args []string, stdout io.Writer) error {
 	// Only the table list takes the app as an argument; rows and schema
 	// take a table.
 	argument := ""
-	if command == "tables" || command == "ls" {
+	if command == "" {
 		if flags.NArg() > 1 {
 			return flags.wrong()
 		}
@@ -56,7 +56,7 @@ func db(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	switch command {
-	case "tables", "ls":
+	case "":
 		tables, err := api.Tables(ctx, name, *database)
 		if err != nil {
 			return err

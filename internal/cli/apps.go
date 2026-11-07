@@ -32,14 +32,14 @@ func apiClient() (*client.Client, error) {
 }
 
 func apps(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
-	command := "ls"
+	command := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
 	}
 	// Help works without a login.
 	api, apiErr := apiClient()
 	switch command {
-	case "ls", "list":
+	case "":
 		flags := newFlags("apps", "apps")
 		if err := flags.parse(args); err != nil {
 			return err
@@ -98,7 +98,7 @@ func apps(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer)
 			done(stdout, "Unpinned %s", style.Bold.Render(app.Name))
 		}
 		return nil
-	case "rm", "remove":
+	case "rm":
 		flags := newFlags("apps rm", "apps rm <app> [--yes]").withApp().withYes()
 		if err := flags.parse(args); err != nil {
 			return err
@@ -681,14 +681,14 @@ func hookOff(ctx context.Context, api *client.Client, name string, stdin io.Read
 
 // registry manages the logins agents use to pull private images.
 func registry(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
-	command := "ls"
+	command := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
 	}
 	// Help works without a login.
 	api, apiErr := apiClient()
 	switch command {
-	case "ls", "list":
+	case "":
 		flags := newFlags("registry", "registry")
 		if err := flags.parse(args); err != nil {
 			return err
@@ -710,7 +710,7 @@ func registry(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 		}
 		table(stdout, []string{"HOST", "USERNAME", "ADDED"}, rows)
 		return nil
-	case "set", "add":
+	case "set":
 		flags := newFlags("registry set", "registry set <host> <username>, then the password or token on stdin")
 		if err := flags.parse(args); err != nil {
 			return err
@@ -738,7 +738,7 @@ func registry(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 		}
 		done(stdout, "Saved the login for %s. Image deploys from it pull with it.", host)
 		return nil
-	case "rm", "remove":
+	case "rm":
 		flags := newFlags("registry rm", "registry rm <host> [--yes]").withYes()
 		if err := flags.parse(args); err != nil {
 			return err
@@ -796,23 +796,22 @@ func logs(ctx context.Context, args []string, stdout io.Writer) error {
 
 // envCommands are the subcommands of env. Any other first argument is the
 // app whose env vars to list.
-var envCommands = []string{"ls", "list", "set", "rm", "remove", "unset", "pull", "push"}
+var envCommands = []string{"set", "rm", "pull", "push"}
 
-// env manages the env vars of an app: ls, set, rm, pull and push. list is
-// ls; remove and unset are rm. In every one, usage mistakes show before a
-// missing login.
+// env lists the env vars of an app, and sets, removes, pulls and pushes
+// them. In every one, usage mistakes show before a missing login.
 func env(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
-	command := "ls"
+	command := ""
 	if len(args) > 0 && slices.Contains(envCommands, args[0]) {
 		command, args = args[0], args[1:]
 	}
 	switch command {
-	case "ls", "list":
-		return envList(ctx, command, args, stdout)
+	case "":
+		return envList(ctx, args, stdout)
 	case "set":
 		return envSet(ctx, args, stdout)
-	case "rm", "remove", "unset":
-		return envRm(ctx, command, args, stdin, stdout)
+	case "rm":
+		return envRm(ctx, args, stdin, stdout)
 	case "pull":
 		return envPull(ctx, args, stdin, stdout)
 	case "push":
@@ -822,8 +821,8 @@ func env(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 }
 
 // envList lists the env vars of an app, the values hidden without --show.
-func envList(ctx context.Context, command string, args []string, stdout io.Writer) error {
-	flags := newFlags("env "+command, "env [--show] [app]").withApp()
+func envList(ctx context.Context, args []string, stdout io.Writer) error {
+	flags := newFlags("env", "env [--show] [app]").withApp()
 	show := flags.Bool("show", false, "show the values")
 	if err := flags.parse(args); err != nil {
 		return err
@@ -903,8 +902,8 @@ func envSet(ctx context.Context, args []string, stdout io.Writer) error {
 
 // envRm removes keys from an app after asking. Only keys the app has are
 // removed; the others say so.
-func envRm(ctx context.Context, command string, args []string, stdin io.Reader, stdout io.Writer) error {
-	flags := newFlags("env "+command, "env rm [--app <app>] KEY ... [--yes]").withApp().withYes()
+func envRm(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
+	flags := newFlags("env rm", "env rm [--app <app>] KEY ... [--yes]").withApp().withYes()
 	if err := flags.parse(args); err != nil {
 		return err
 	}

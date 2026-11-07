@@ -16,30 +16,29 @@ import (
 
 // domainCommands are the subcommands of domains. Any other first argument
 // is the app whose domains to list.
-var domainCommands = []string{"ls", "list", "add", "rm", "remove", "canonical"}
+var domainCommands = []string{"add", "rm", "canonical"}
 
 // domains lists the domains of an app with their DNS state, and adds,
 // removes or picks the canonical one.
 func domains(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
-	command := "ls"
+	command := ""
 	if len(args) > 0 && slices.Contains(domainCommands, args[0]) {
 		command, args = args[0], args[1:]
 	}
 	usage := map[string]string{
 		"add":       "domains add [--app <app>] [--service <service>] <domain> ...",
 		"rm":        "domains rm [--app <app>] [--service <service>] <domain> ... [--yes]",
-		"remove":    "domains rm [--app <app>] [--service <service>] <domain> ... [--yes]",
 		"canonical": "domains canonical [--app <app>] <domain|none>",
 	}[command]
 	if usage == "" {
 		usage = "domains [app]"
 	}
-	flags := newFlags("domains "+command, usage).withApp()
-	if command == "rm" || command == "remove" {
+	flags := newFlags(strings.TrimSpace("domains "+command), usage).withApp()
+	if command == "rm" {
 		flags.withYes()
 	}
 	service := ""
-	if command == "add" || command == "rm" || command == "remove" {
+	if command == "add" || command == "rm" {
 		flags.StringVar(&service, "service", "", "a service of compose.yml other than the main one")
 	}
 	if err := flags.parse(args); err != nil {
@@ -49,7 +48,7 @@ func domains(ctx context.Context, args []string, stdin io.Reader, stdout io.Writ
 	if err != nil {
 		return err
 	}
-	if command == "ls" || command == "list" {
+	if command == "" {
 		if flags.NArg() > 1 {
 			return flags.wrong()
 		}
@@ -81,7 +80,7 @@ func domains(ctx context.Context, args []string, stdin io.Reader, stdout io.Writ
 				list = append(list, domain)
 			}
 		}
-	case "rm", "remove":
+	case "rm":
 		if flags.NArg() == 0 {
 			return flags.wrong()
 		}

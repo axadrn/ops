@@ -74,7 +74,7 @@ Every command of `moin`, by area. `moin <command> --help` shows the same on your
 | Command | What it does |
 | --- | --- |
 | `moin apps` | lists apps |
-| `moin apps <app>` | one app: its state, server, domains, password, repo and deploys, and "N changes waiting" with the restart that applies them; `moin app <app>` works too |
+| `moin apps <app>` | one app: its state, server, domains, password, repo and deploys, and "N changes waiting" with the restart that applies them |
 | `moin apps add --server <server> <name>` | adds an app |
 | `moin apps rm <app> [--yes]` | asks you to type its name and removes the app; its data stays on the server |
 | `moin apps pin [app]` · `moin apps unpin [app]` | keeps an app above the others that run fine, in every list |
@@ -150,7 +150,7 @@ Every command of `moin`, by area. `moin <command> --help` shows the same on your
 | --- | --- |
 | `moin env [--show] [app]` | lists env vars, values hidden without `--show` |
 | `moin env set [app] KEY=value …` | sets env vars |
-| `moin env rm KEY … [--yes]` | removes env vars; `unset` works too |
+| `moin env rm KEY … [--yes]` | removes env vars |
 | `moin env pull [--app <app>] [--yes] [file]` | writes them to a `.env` file, default `.env`; asks before it replaces a file |
 | `moin env push [--app <app>] [--yes] [file]` | replaces all env vars with a `.env` file, default `.env`; shows the keys that change and asks first |
 | `moin run [--app <app>] -- <command>` | runs a command on your computer with the env vars, like `moin run -- go run .` |
@@ -159,7 +159,7 @@ Every command of `moin`, by area. `moin <command> --help` shows the same on your
 
 | Command | What it does |
 | --- | --- |
-| `moin db [--db <path>] [app]` | tables, row counts and migration of the app's database, SQLite or Postgres; `moin db tables` works too |
+| `moin db [--db <path>] [app]` | tables, row counts and migration of the app's database, SQLite or Postgres |
 | `moin db rows <table> [--limit 20] [--offset 0]` | a page of a table, newest first |
 | `moin db schema [table]` | the CREATE statements |
 | `moin sql [--app <app>] [--db <path>] [--limit 100] "<sql>"` | runs SQL read-only; the SQL may come on stdin |
@@ -209,7 +209,7 @@ These run on a server, as root.
 
 A command that works on an app takes it as an argument or as `--app`, then from `x-moin.app` in `compose.yml`, then from the name of the directory. When there is no such app, the error names it and where the name came from.
 
-Flags may come before or after the arguments: `moin rollback v3 --app shop` is `moin rollback --app shop v3`. `ls` and `list`, `rm` and `remove` are the same subcommand.
+Flags may come before or after the arguments: `moin rollback v3 --app shop` is `moin rollback --app shop v3`. Every command has one name, the one on this page.
 
 ## Asking first
 

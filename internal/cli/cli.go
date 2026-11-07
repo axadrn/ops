@@ -53,7 +53,7 @@ Servers
   servers install-command  A new one-time install command, to install or move the agent: servers install-command web-1
   servers update     Update the agent to the control plane's version now: servers update [web-1]
   servers auto-update  Agents update by themselves, on by default: servers auto-update [on|off]
-  servers secure     Lock it down: secure web-1 [--tunnel on|off] [--ssh tailscale|open] [--firewall on|off] [--yes]
+  servers secure     Lock it down: servers secure web-1 [--tunnel on|off] [--ssh tailscale|open] [--firewall on|off] [--yes]
   servers rules      The server's own rules for moin, from /etc/moin/rules on it
   integrations       Cloudflare token and Tailscale key; set one: integrations cloudflare, key on stdin
   integrations rm    Remove one: integrations rm cloudflare|tailscale [--yes]
@@ -262,7 +262,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 		return team(ctx, rest, stdin, stdout)
 	case "servers":
 		return servers(ctx, rest, stdin, stdout)
-	case "apps", "app":
+	case "apps":
 		return apps(ctx, rest, stdin, stdout)
 	case "deploy":
 		return deploy(ctx, rest, stdout)
@@ -461,12 +461,12 @@ func servers(ctx context.Context, args []string, stdin io.Reader, stdout io.Writ
 	if err != nil {
 		return err
 	}
-	command := "ls"
+	command := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
 	}
 	switch command {
-	case "ls", "list":
+	case "":
 		return listServers(ctx, config, args, stdout)
 	case "add":
 		return addServer(ctx, config, args, stdout)
@@ -482,7 +482,7 @@ func servers(ctx context.Context, args []string, stdin io.Reader, stdout io.Writ
 		return newInstallCommand(ctx, config, args, stdout)
 	case "rename":
 		return renameServer(ctx, config, args, stdout)
-	case "rm", "remove":
+	case "rm":
 		return removeServer(ctx, config, args, stdin, stdout)
 	}
 	return fmt.Errorf("unknown command %q. Run `%s help`", "servers "+command, build.Name)
@@ -491,7 +491,7 @@ func servers(ctx context.Context, args []string, stdin io.Reader, stdout io.Writ
 // Each servers command reads its flags before it needs a login, so its help
 // works without one.
 
-// listServers is `servers ls`: the server table.
+// listServers is `servers`: the server table.
 func listServers(ctx context.Context, config client.Config, args []string, stdout io.Writer) error {
 	flags := newFlags("servers", "servers")
 	if err := flags.parse(args); err != nil {

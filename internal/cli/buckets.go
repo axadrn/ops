@@ -16,12 +16,12 @@ import (
 // picks the bucket of an app. Each subcommand asks for the login before it
 // looks at its arguments.
 func buckets(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
-	command := "ls"
+	command := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
 	}
 	switch command {
-	case "ls":
+	case "":
 		return bucketsList(ctx, args, stdout)
 	case "add":
 		return bucketsAdd(ctx, args, stdin, stdout)
@@ -56,7 +56,7 @@ func newBucketFlags(flags *flagSet) bucketFlags {
 
 // bucketsList shows every bucket with the apps that use it.
 func bucketsList(ctx context.Context, args []string, stdout io.Writer) error {
-	flags := newFlags("buckets ls", "buckets")
+	flags := newFlags("buckets", "buckets")
 	if err := flags.parse(args); err != nil {
 		return err
 	}
