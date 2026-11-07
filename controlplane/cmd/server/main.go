@@ -105,6 +105,17 @@ func run(cfg *config.Config) error {
 			<-stopped
 		}()
 	}
+	// Unknown restores are asked about until the database closes.
+	restores, stopRestores := context.WithCancel(context.Background())
+	restoresStopped := make(chan struct{})
+	go func() {
+		application.AppService.RunRestores(restores)
+		close(restoresStopped)
+	}()
+	defer func() {
+		stopRestores()
+		<-restoresStopped
+	}()
 	// Metrics write their last minutes before the database closes, too.
 	metrics, stopMetrics := context.WithCancel(context.Background())
 	metricsStopped := make(chan struct{})

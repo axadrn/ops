@@ -470,9 +470,10 @@ const (
 // keepRestores is how long a restore's record stays.
 const keepRestores = 7 * 24 * time.Hour
 
-// StartRestore puts a database of an app back to a moment. The agent takes
-// one full copy of it as it is first, which keeps 7 days: going back to it
-// undoes the restore. It reserves the restore, checks the moment, then the
+// StartRestore puts a database of an app back to a moment. The agent
+// builds the restored database beside the live one and switches in one
+// step; the state before keeps 7 days: going back to it undoes the
+// restore. It reserves the restore, checks the moment, then the
 // agent runs the restore on its own; RestoreOf follows it.
 func (s *AppService) StartRestore(ctx context.Context, actor Actor, idOrName string, target RestoreTarget) (*Restore, error) {
 	if strings.TrimSpace(target.Moment) == "" && target.At == nil {
@@ -593,10 +594,17 @@ func (s *AppService) applyRestoreStates(app *model.App, states []protocol.Restor
 	}
 }
 
-// reconcileRestores asks the agent of a server that just connected how
-// the restores stand that the control plane lost track of: those whose
-// server went offline during them, and those that ran when the control
-// plane restarted. One the agent knows nothing of never started there.
+// RestoreNoWord begins the error of a restore whose agent does not report
+// restores: nobody can say how it ended.
+const RestoreNoWord = "Unknown how it ended"
+
+// reconcileRestores asks the agent of a server how the restores stand that
+// the control plane lost track of: those whose server went offline during
+// them, and those that ran when the control plane restarted. It runs when
+// the agent connects and every minute while one is unknown (RunRestores).
+// The agent writes a restore down the moment it arrives, so one it knows
+// nothing of never reached it. An agent that reports no restores at all
+// cannot say: the restore ends with that, and the app is to check.
 func (s *AppService) reconcileRestores(serverID string) {
 	restores, err := s.apps.ActiveRestoresOn(serverID)
 	if err != nil {
@@ -622,10 +630,49 @@ func (s *AppService) reconcileRestores(serverID string) {
 			slog.Warn("ask how a restore stands failed", "id", restore.ID, "error", err)
 			continue
 		}
+		if backups.Restores == nil {
+			s.endRestore(System(app.WorkspaceID), app, restore.ID, protocol.RestoreState{State: RestoreFailed, Error: RestoreNoWord + ": the agent on the server does not report restores. Check the app and its data; update the agent so moin can tell next time."})
+			continue
+		}
 		s.applyRestoreStates(app, backups.Restores)
 		known := slices.ContainsFunc(backups.Restores, func(state protocol.RestoreState) bool { return state.ID == restore.ID })
 		if !known {
-			s.endRestore(System(app.WorkspaceID), app, restore.ID, protocol.RestoreState{State: RestoreFailed, Error: "the server knows nothing of this restore: it never started there; the data is as it was"})
+			s.endRestore(System(app.WorkspaceID), app, restore.ID, protocol.RestoreState{State: RestoreFailed, Error: "the restore never reached the server; the data is as it was"})
+		}
+	}
+}
+
+// restoreAskEvery is how often RunRestores asks the servers of unknown
+// restores how they ended.
+const restoreAskEvery = time.Minute
+
+// RunRestores asks, every minute, the agents of restores whose server went
+// offline during them how they ended, once the server is back: the session
+// may come back without the agent having said a word yet.
+func (s *AppService) RunRestores(ctx context.Context) {
+	ticker := time.NewTicker(restoreAskEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.askUnknownRestores()
+		}
+	}
+}
+
+// askUnknownRestores asks each server with an unknown restore that is
+// online.
+func (s *AppService) askUnknownRestores() {
+	servers, err := s.apps.UnknownRestoreServers()
+	if err != nil {
+		slog.Error("list the servers of unknown restores failed", "error", err)
+		return
+	}
+	for _, serverID := range servers {
+		if s.servers.Online(serverID) {
+			s.reconcileRestores(serverID)
 		}
 	}
 }

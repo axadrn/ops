@@ -352,6 +352,14 @@ func (r *Apps) ActiveRestoresOn(serverID string) ([]model.BackupRestore, error) 
 	return restores, err
 }
 
+// UnknownRestoreServers are the servers with a restore whose end nobody
+// knows yet.
+func (r *Apps) UnknownRestoreServers() ([]string, error) {
+	servers := []string{}
+	err := r.db.Select(&servers, `SELECT DISTINCT a.server_id FROM backup_restores r JOIN apps a ON a.id = r.app_id WHERE r.state = 'unknown' ORDER BY 1`)
+	return servers, err
+}
+
 func (r *Apps) BackupStatus(appID string) ([]model.BackupStatus, error) {
 	statuses := []model.BackupStatus{}
 	err := r.db.Select(&statuses, `SELECT * FROM backup_status WHERE app_id = $1 ORDER BY database`, appID)

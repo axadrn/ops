@@ -291,7 +291,11 @@ templ backupRestore(view BackupsView, database string) {
 		@kit.RowControl(templ.Attributes{"data-restore-failed": true}) {
 			@kit.Dot(kit.StateFailed)
 			<div class="min-w-0 flex-1">
-				<div class="font-medium text-failed">The restore to { lowerFirst(restore.To) } failed</div>
+				if strings.HasPrefix(restore.Error, service.RestoreNoWord) {
+					<div class="font-medium text-failed">Unknown how the restore to { lowerFirst(restore.To) } ended: check the app</div>
+				} else {
+					<div class="font-medium text-failed">The restore to { lowerFirst(restore.To) } failed</div>
+				}
 				<details class="text-sm text-muted-foreground">
 					<summary class="cursor-pointer list-none py-1 outline-none hover:text-foreground focus-visible:text-foreground [&::-webkit-details-marker]:hidden">Show details</summary>
 					<p class="font-mono text-xs break-words">{ restore.Error }</p>

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/axadrn/moin/protocol"
@@ -167,9 +168,18 @@ func (c *Client) Restore(ctx context.Context, app, database, moment string, at *
 	}
 	// It runs, or its server went offline during it (unknown) and tells
 	// how it ended when it is back. A control plane that restarts or a
-	// network that drops for a while is no failure: it asks again.
+	// network that drops for a while is no failure: it asks again. A
+	// server that stays offline ends the wait after unknownWait.
 	failures := 0
+	var unknownSince time.Time
 	for restore.State == "running" || restore.State == "unknown" {
+		if restore.State != "unknown" {
+			unknownSince = time.Time{}
+		} else if unknownSince.IsZero() {
+			unknownSince = time.Now()
+		} else if time.Since(unknownSince) > unknownWait {
+			return fmt.Errorf("the server went offline during the restore %s, and moin does not know yet how it ended. Once the server is back, moin backups %s shows it; check the app then", restore.ID, app)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -189,11 +199,19 @@ func (c *Client) Restore(ctx context.Context, app, database, moment string, at *
 		}
 		failures, restore = 0, next
 	}
-	if restore.State != "done" {
+	switch {
+	case restore.State == "done":
+		return nil
+	case strings.HasPrefix(restore.Error, "Unknown how it ended"):
+		return errors.New(restore.Error)
+	default:
 		return fmt.Errorf("the restore failed: %s", restore.Error)
 	}
-	return nil
 }
+
+// unknownWait is how long Restore waits for a server that went offline
+// during a restore to say how it ended.
+var unknownWait = 10 * time.Minute
 
 // restoreRetries is how often in a row Restore asks again when the
 // control plane does not answer.

@@ -278,17 +278,32 @@ func TestRestoreRunsOnItsOwn(t *testing.T) {
 		t.Fatalf("a late word: %+v", done)
 	}
 
-	// One the agent knows nothing of never started there.
-	lost := &Restore{ID: "lost", WorkspaceID: owner.WorkspaceID, AppID: restore.AppID, App: "shop", State: RestoreUnknown, StartedAt: time.Now().UTC()}
-	if err := apps.apps.AddRestore(*lost, time.Now().Add(-keepRestores)); err != nil {
-		t.Fatal(err)
+	// The agent writes a restore down the moment it arrives: one it knows
+	// nothing of never reached it. The minute loop asks, not only a
+	// connect.
+	unknown := func(id string) {
+		t.Helper()
+		if err := apps.apps.AddRestore(Restore{ID: id, WorkspaceID: owner.WorkspaceID, AppID: restore.AppID, App: "shop", State: RestoreUnknown, StartedAt: time.Now().UTC()}, time.Now().Add(-keepRestores)); err != nil {
+			t.Fatal(err)
+		}
 	}
+	unknown("lost")
+	says.Lock()
+	knows = protocol.Backups{App: "shop", Restores: []protocol.RestoreState{}}
+	says.Unlock()
+	restarted.askUnknownRestores()
+	if gone, _ := restarted.RestoreOf(owner.WorkspaceID, "shop", "lost"); gone.State != RestoreFailed || !strings.Contains(gone.Error, "never reached the server") {
+		t.Fatalf("a restore the agent knows nothing of: %+v", gone)
+	}
+	// An agent that reports no restores at all cannot say how one ended:
+	// never "it never started".
+	unknown("old-agent")
 	says.Lock()
 	knows = protocol.Backups{App: "shop"}
 	says.Unlock()
-	restarted.reconcileRestores(server.ID)
-	if gone, _ := restarted.RestoreOf(owner.WorkspaceID, "shop", "lost"); gone.State != RestoreFailed || !strings.Contains(gone.Error, "knows nothing") {
-		t.Fatalf("an unknown restore: %+v", gone)
+	restarted.askUnknownRestores()
+	if gone, _ := restarted.RestoreOf(owner.WorkspaceID, "shop", "old-agent"); gone.State != RestoreFailed || !strings.HasPrefix(gone.Error, RestoreNoWord) || !strings.Contains(gone.Error, "Check the app") {
+		t.Fatalf("a restore of an agent that does not report restores: %+v", gone)
 	}
 }
 

@@ -52,3 +52,24 @@ func TestRestoreWaitsThroughOutages(t *testing.T) {
 		t.Fatalf("a restore that is gone: %v", err)
 	}
 }
+
+// TestRestoreUnknownEnds: a server that stays offline after it went away
+// during a restore ends the wait after a while, with what to check.
+func TestRestoreUnknownEnds(t *testing.T) {
+	defer func(poll, wait time.Duration) { restorePoll, unknownWait = poll, wait }(restorePoll, unknownWait)
+	restorePoll, unknownWait = time.Millisecond, 50*time.Millisecond
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"r1","state":"unknown"}`)
+	}))
+	defer server.Close()
+	api, _ := New(Config{URL: server.URL, Token: "pat_x"})
+	start := time.Now()
+	err := api.Restore(context.Background(), "shop", "", "1h", nil)
+	if err == nil || !strings.Contains(err.Error(), "does not know yet how it ended") || !strings.Contains(err.Error(), "moin backups shop") {
+		t.Fatalf("an unknown restore: %v", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("waited %s", time.Since(start))
+	}
+}

@@ -2793,7 +2793,7 @@ paths:
       tags: [Backups]
       operationId: restoreApp
       summary: Restore a database
-      description: Puts a database back to a moment from getAppBackups, by its id or label, or to a time in its history, to the minute. moin checks the moment, answers 202 and the agent runs the restore on its own; follow it with getRestore until `state` is `done` or `failed`. The agent first stops the app's other services, takes one full copy of the database as it is, which stays 7 days in the app's bucket, so the restore can be undone; then it swaps the data in and starts the app again, also when something failed. A restore to an `undo-` moment puts that copy back. A label two moments share needs the moment's id.
+      description: Puts a database back to a moment from getAppBackups, by its id or label, or to a time in its history, to the minute. moin checks the moment, answers 202 and the agent runs the restore on its own; follow it with getRestore until `state` is `done` or `failed`. The agent builds the restored database beside the live one while the app runs, then stops the app, switches in one step and starts the app again, also when something failed. The state before stays 7 days, so the restore can be undone: a restore to an `undo-` moment switches back to it. `state` is `unknown` while the server is offline during the restore; moin asks it every minute once it is back. A label two moments share needs the moment's id.
       requestBody:
         required: true
         content:
@@ -6053,7 +6053,7 @@ components:
           description: '`unknown` while the server is offline during the restore; the agent tells how it ended when it is back, and no other restore of the app starts until then.'
         error:
           type: string
-          description: Why it failed. When moin took the copy before, the message names its undo- moment.
+          description: Why it failed; nothing changed then. One that begins "Unknown how it ended" comes from an agent that cannot say how it ended; check the app.
         started_at:
           type: string
           format: date-time
